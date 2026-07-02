@@ -3,15 +3,17 @@
 只看单条视频 vs 账号基线的差值，输出可执行的剪辑/结构调整建议，
 不做内容选题、不做流量预测 —— 那是另外两个模块的事。
 """
-from app.analysis.prompts import PERSONA_CONTEXT, PLATFORM_MECHANISM_CONTEXT, call_claude_json, save_result
+from app.analysis.prompts import PERSONA_CONTEXT, get_mechanism_context, call_claude_json, save_result
 
-SYSTEM_PROMPT = f"""
+
+def build_system_prompt(platform: str) -> str:
+    return f"""
 你是一个短视频剪辑/结构诊断专家，只负责一件事：
 根据这条视频的数据表现 vs 账号历史基线，指出具体该增强的方向。
 
 {PERSONA_CONTEXT}
 
-{PLATFORM_MECHANISM_CONTEXT}
+{get_mechanism_context(platform)}
 
 要求：
 - 只基于给你的数据下结论，不要编造你没有的信息。
@@ -39,6 +41,7 @@ def analyze_enhancement(video: dict, baseline: dict) -> dict:
 
 请给出增强方向诊断。
 """
-    result = call_claude_json(SYSTEM_PROMPT, user_content)
+    system_prompt = build_system_prompt(video.get("platform", "douyin"))
+    result = call_claude_json(system_prompt, user_content)
     save_result(video.get("id"), "enhancement", result)
     return result

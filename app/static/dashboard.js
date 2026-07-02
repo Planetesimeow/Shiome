@@ -189,10 +189,11 @@ function renderResult(type, data) {
     }
     html += renderList("可以减少投入的类型", data.patterns_to_retire);
   } else if (type === "pool_diagnosis") {
-    html += `<h3>当前流量池 <span class="confidence">置信度: ${escapeHtml(data.tier_confidence)}</span></h3><p>${escapeHtml(data.current_tier)}</p>`;
-    html += `<h3>卡点指标</h3><p>${escapeHtml(data.blocking_metric ?? "没有明显卡点")}</p>`;
-    if (data.current_vs_target) html += `<p style="color:var(--text-muted);font-size:12px">${escapeHtml(data.current_vs_target)}</p>`;
-    html += renderList("解锁下一级的具体改动", data.unlock_actions);
+    html += `<h3>扩散曲线形状 <span class="confidence">置信度: ${escapeHtml(data.shape_confidence)}</span></h3><p>${escapeHtml(data.curve_shape)}</p>`;
+    if (data.diffusion_stage) html += `<h3>扩散阶段</h3><p>${escapeHtml(data.diffusion_stage)}</p>`;
+    html += `<h3>卡点信号</h3><p>${escapeHtml(data.bottleneck_signal ?? "没有明显卡点")}</p>`;
+    if (data.throttle_vs_decay) html += `<h3>限流 vs 自然衰减</h3><p>${escapeHtml(data.throttle_vs_decay)}</p>`;
+    html += renderList("推动继续扩散的改动", data.unlock_actions);
     html += `<div class="caveat">${escapeHtml(data.caveat)}</div>`;
   } else if (type === "creator_profile") {
     html += renderList("当前内容方向分布", data.content_direction_breakdown);
