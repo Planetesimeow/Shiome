@@ -2,15 +2,20 @@
 数据层。用 SQLite，单文件、零配置，够一个人用的账号规模。
 以后如果要多端同步，再考虑换 Postgres —— 结构不用大改。
 """
+import os
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 
-DB_PATH = Path(__file__).parent / "data" / "douyin.db"
+# 默认落在 app/data/douyin.db；设 SHIOME_DB_PATH 可指向别处（比如压测时用一次性测试库，
+# 不污染真实数据）。
+_DEFAULT_DB_PATH = Path(__file__).parent / "data" / "douyin.db"
+DB_PATH = Path(os.environ.get("SHIOME_DB_PATH", _DEFAULT_DB_PATH))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS videos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    platform TEXT NOT NULL DEFAULT 'douyin',  -- v1.0.0 只有 douyin；小红书/B站 v2.0.0
     douyin_video_id TEXT,
     title TEXT NOT NULL,
     publish_date TEXT NOT NULL,          -- ISO date
@@ -81,6 +86,7 @@ MIGRATIONS = [
     "ALTER TABLE videos ADD COLUMN music TEXT",
     "ALTER TABLE videos ADD COLUMN hook_description TEXT",
     "ALTER TABLE videos ADD COLUMN content_pillar TEXT",
+    "ALTER TABLE videos ADD COLUMN platform TEXT NOT NULL DEFAULT 'douyin'",
 ]
 
 

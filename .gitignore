@@ -9,6 +9,9 @@ app/data/
 *.sqlite
 *.sqlite3
 
+# Test artifacts — never upload test results (dated *_Test files live here)
+test_output/
+
 # Python
 __pycache__/
 *.py[cod]

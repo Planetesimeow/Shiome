@@ -35,14 +35,14 @@ def add_video(video: VideoIn):
         anomaly = video_falls_in_anomaly(conn, video.publish_date)
         cur = conn.execute(
             """
-            INSERT INTO videos (douyin_video_id, title, publish_date, duration_sec,
+            INSERT INTO videos (platform, douyin_video_id, title, publish_date, duration_sec,
                 plays, likes, comments, shares, saves, completion_rate, avg_watch_time,
                 profile_visits, new_followers, high_intent_comments, high_intent_dms,
                 is_anomaly_period, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
-                video.douyin_video_id, video.title, video.publish_date, video.duration_sec,
+                video.platform, video.douyin_video_id, video.title, video.publish_date, video.duration_sec,
                 video.plays, video.likes, video.comments, video.shares, video.saves,
                 video.completion_rate, video.avg_watch_time, video.profile_visits,
                 video.new_followers, video.high_intent_comments, video.high_intent_dms,
@@ -66,12 +66,13 @@ async def import_csv(file: UploadFile = File(...)):
             anomaly = video_falls_in_anomaly(conn, r.get("publish_date", ""))
             conn.execute(
                 """
-                INSERT INTO videos (title, publish_date, plays, likes, comments, shares,
+                INSERT INTO videos (platform, title, publish_date, plays, likes, comments, shares,
                     saves, completion_rate, avg_watch_time, profile_visits, new_followers,
                     is_anomaly_period, raw_data)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
+                    "douyin",  # 创作者中心 CSV 就是抖音；v2.0.0 接别的平台再参数化
                     r.get("title"), r.get("publish_date"), r.get("plays", 0), r.get("likes", 0),
                     r.get("comments", 0), r.get("shares", 0), r.get("saves", 0),
                     r.get("completion_rate"), r.get("avg_watch_time"), r.get("profile_visits", 0),
