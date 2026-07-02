@@ -1,0 +1,23 @@
+# Secrets — never commit real keys
+.env
+.env.*
+!.env.example
+
+# Local data (SQLite DB + anything under app/data)
+app/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env/
+
+# OS / editor junk
+.DS_Store
+.idea/
+.vscode/

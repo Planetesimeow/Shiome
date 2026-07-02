@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>潮目 | Shiome</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>潮目 <span class="eyebrow">SHIOME · 満電暴走兔</span></h1>
+  <span class="status" id="status-line">加载中...</span>
+</header>
+
+<main>
+  <section class="panel" id="left-panel">
+    <div class="panel-header">
+      <h2>视频列表</h2>
+    </div>
+    <div class="import-box">
+      从创作者中心导出 CSV 后在这里导入。
+      <br>
+      <input type="file" id="csv-input" accept=".csv">
+    </div>
+    <ul class="video-list" id="video-list"></ul>
+  </section>
+
+  <section class="panel content-area" id="right-panel">
+    <div class="chart-wrap">
+      <canvas id="trend-chart"></canvas>
+      <div class="legend-note"><span class="swatch"></span>阴影区间 = 已标记的异常期（不计入基线）</div>
+    </div>
+
+    <div id="detail-empty" class="empty-state">从左侧选一条视频，查看分析</div>
+
+    <div id="detail-view" style="display:none;">
+      <details class="profile-panel" id="profile-panel">
+        <summary>内容画像 &amp; 快照记录</summary>
+
+        <div class="profile-section">
+          <div class="eyebrow">内容画像（创作者中心导不出来，手动填）</div>
+          <label>内容简述<textarea id="pf-content_summary" rows="2"></textarea></label>
+          <label>画面文字要点<textarea id="pf-on_screen_text" rows="2"></textarea></label>
+          <label>配乐<input id="pf-music" type="text"></label>
+          <label>核心抓人点<textarea id="pf-hook_description" rows="2"></textarea></label>
+          <label>内容方向标签<input id="pf-content_pillar" type="text" placeholder="例如：体态反差 / 买车避坑"></label>
+          <button class="primary" onclick="saveContentProfile()">保存内容画像</button>
+        </div>
+
+        <div class="profile-section">
+          <div class="eyebrow">记录一次快照（用于流量池定位）</div>
+          <div class="snapshot-grid">
+            <label>播放<input id="sn-plays" type="number" value="0"></label>
+            <label>点赞<input id="sn-likes" type="number" value="0"></label>
+            <label>评论<input id="sn-comments" type="number" value="0"></label>
+            <label>收藏<input id="sn-saves" type="number" value="0"></label>
+            <label>完播率%<input id="sn-completion" type="number" step="0.1"></label>
+          </div>
+          <button class="primary" onclick="addSnapshot()">记录快照（当前时间）</button>
+          <ul id="snapshot-list" class="snapshot-list"></ul>
+        </div>
+      </details>
+
+      <div class="tabs">
+        <div class="tab active" data-type="enhancement">增强方向</div>
+        <div class="tab" data-type="trend_forecast">流量预估</div>
+        <div class="tab" data-type="pool_diagnosis">流量池定位</div>
+        <div class="tab" data-type="content_ideas">内容建议</div>
+        <div class="tab" data-type="creator_profile">创作者画像</div>
+      </div>
+      <div id="result-container"></div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/dashboard.js"></script>
+</body>
+</html>
