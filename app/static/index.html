@@ -10,13 +10,16 @@
 </head>
 <body>
 
+<input type="file" id="csv-input" accept=".csv" hidden>
+
 <header>
-  <div class="brand-wrap">
+  <div class="brand-wrap" onclick="showOverview()" title="返回账号总览">
     <img class="brand-logo" src="/static/img/logo.png" alt="潮目 Shiome">
     <span class="brand-sub">満電暴走兔 · 抖音数据分析</span>
   </div>
   <div class="header-actions">
     <span class="status" id="status-line">加载中...</span>
+    <label class="btn-ghost" for="csv-input">导入 CSV</label>
     <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出报告</a>
   </div>
 </header>
@@ -25,25 +28,32 @@
   <section class="panel" id="left-panel">
     <div class="panel-header">
       <h2>视频列表</h2>
-    </div>
-    <div class="import-box">
-      从创作者中心导出 CSV 后在这里导入。
-      <br>
-      <input type="file" id="csv-input" accept=".csv">
+      <span class="count" id="video-count"></span>
     </div>
     <ul class="video-list" id="video-list"></ul>
   </section>
 
   <section class="panel content-area" id="right-panel">
-    <div class="chart-wrap">
-      <canvas id="trend-chart"></canvas>
-      <div class="legend-note"><span class="swatch"></span>阴影区间 = 已标记的异常期（不计入基线）</div>
+
+    <div id="hero">
+      <img class="hero-logo" src="/static/img/logo.png" alt="潮目 SHIOME">
+      <p class="hero-tagline">两股海流交汇之处，鱼群聚集。<br>在数据显现之前，先读出趋势转折的那条分界线。</p>
+      <div class="hero-stats">
+        <div class="hstat"><div class="label">视频</div><div class="value" id="hs-count">--</div></div>
+        <div class="hstat"><div class="label">最近发布</div><div class="value" id="hs-latest">--</div></div>
+        <div class="hstat"><div class="label">基线完播</div><div class="value" id="hs-completion">--</div></div>
+      </div>
+      <div class="hero-actions">
+        <label class="primary" for="csv-input">导入创作者中心 CSV</label>
+        <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出分析报告</a>
+      </div>
+      <p class="hero-hint">从左侧选择一条视频，进入五个维度的分析</p>
     </div>
 
-    <div id="detail-empty" class="empty-state">
-      <img class="empty-mark" src="/static/img/favicon.png" alt="">
-      <p>从左侧选择一条视频，查看五个维度的分析<br>
-      还没有数据？先从创作者中心导出 CSV，在左上角导入</p>
+    <div class="chart-wrap">
+      <div class="chart-title">播放量 &amp; 完播率趋势</div>
+      <canvas id="trend-chart"></canvas>
+      <div class="legend-note"><span class="swatch"></span>红色三角 = 已标记的异常期（不计入基线）</div>
     </div>
 
     <div id="detail-view" style="display:none;">

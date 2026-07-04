@@ -29,6 +29,30 @@ async function loadVideos() {
     list.appendChild(li);
   }
   document.getElementById("status-line").textContent = `${state.videos.length} 条视频`;
+  document.getElementById("video-count").textContent = state.videos.length || "";
+  updateHeroStats();
+}
+
+// ---------- 账号总览 hero ----------
+
+function updateHeroStats() {
+  document.getElementById("hs-count").textContent = state.videos.length || "0";
+  document.getElementById("hs-latest").textContent = state.videos[0]?.publish_date ?? "--";
+}
+
+async function loadHeroBaseline() {
+  try {
+    const b = await api("/api/baseline");
+    document.getElementById("hs-completion").textContent =
+      b.avg_completion_rate != null ? (b.avg_completion_rate * 100).toFixed(1) + "%" : "--";
+  } catch (e) { /* 数据库还没数据时保持 -- */ }
+}
+
+function showOverview() {
+  state.selectedId = null;
+  document.getElementById("detail-view").style.display = "none";
+  document.getElementById("hero").style.display = "";
+  loadVideos();
 }
 
 function formatNum(n) {
@@ -102,7 +126,7 @@ async function loadTrendChart() {
 
 function selectVideo(id) {
   state.selectedId = id;
-  document.getElementById("detail-empty").style.display = "none";
+  document.getElementById("hero").style.display = "none";
   document.getElementById("detail-view").style.display = "block";
   loadVideos();
   loadMetricsPanel(id);
@@ -383,3 +407,4 @@ document.getElementById("csv-input").addEventListener("change", async (e) => {
 
 loadVideos();
 loadTrendChart();
+loadHeroBaseline();
