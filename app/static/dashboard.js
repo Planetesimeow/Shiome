@@ -105,6 +105,8 @@ function selectVideo(id) {
   document.getElementById("detail-empty").style.display = "none";
   document.getElementById("detail-view").style.display = "block";
   loadVideos();
+  loadMetricsPanel(id);
+  loadDiffusionChart(id);
   loadContentProfileForm(id);
   loadSnapshots(id);
   loadResultForActiveTab();
@@ -189,12 +191,14 @@ function renderResult(type, data) {
     }
     html += renderList("可以减少投入的类型", data.patterns_to_retire);
   } else if (type === "pool_diagnosis") {
-    html += `<h3>扩散曲线形状 <span class="confidence">置信度: ${escapeHtml(data.shape_confidence)}</span></h3><p>${escapeHtml(data.curve_shape)}</p>`;
-    if (data.diffusion_stage) html += `<h3>扩散阶段</h3><p>${escapeHtml(data.diffusion_stage)}</p>`;
-    html += `<h3>卡点信号</h3><p>${escapeHtml(data.bottleneck_signal ?? "没有明显卡点")}</p>`;
-    if (data.throttle_vs_decay) html += `<h3>限流 vs 自然衰减</h3><p>${escapeHtml(data.throttle_vs_decay)}</p>`;
+    const warn = /限流|断崖|冻结/.test(data.curve_shape || "") ? " warn" : "";
+    html += `<h3>扩散曲线形状 <span class="confidence">置信度 ${escapeHtml(data.shape_confidence)}</span></h3>`;
+    html += `<p><span class="badge${warn}">${escapeHtml(data.curve_shape)}</span></p>`;
+    html += kvRow("扩散阶段", data.diffusion_stage);
+    html += kvRow("卡点信号", data.bottleneck_signal ?? "没有明显卡点");
+    html += kvRow("限流vs衰减", data.throttle_vs_decay);
     html += renderList("推动继续扩散的改动", data.unlock_actions);
-    html += `<div class="caveat">${escapeHtml(data.caveat)}</div>`;
+    if (data.caveat) html += `<div class="caveat">${escapeHtml(data.caveat)}</div>`;
   } else if (type === "creator_profile") {
     html += renderList("当前内容方向分布", data.content_direction_breakdown);
     html += renderList("钩子模式", data.hook_patterns);
@@ -210,6 +214,87 @@ function renderResult(type, data) {
 function renderList(title, items) {
   if (!items || items.length === 0) return "";
   return `<h3>${title}</h3><ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join("")}</ul>`;
+}
+
+function kvRow(k, v) {
+  if (v == null || v === "") return "";
+  return `<div class="kv-row"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(v)}</div></div>`;
+}
+
+// ---------- 选中视频：指标面板（vs 基线）----------
+
+function rate(a, b) { return b ? a / b : null; }
+function pct(x) { return x == null ? "--" : (x * 100).toFixed(1) + "%"; }
+
+async function loadMetricsPanel(id) {
+  const panel = document.getElementById("metrics-panel");
+  try {
+    const [video, baseline] = await Promise.all([api(`/api/videos/${id}`), api(`/api/baseline`)]);
+    const saveRate = rate(video.saves, video.plays);
+    const v2f = rate(video.new_followers, video.profile_visits);
+    const highIntent = (video.high_intent_comments || 0) + (video.high_intent_dms || 0);
+    const metrics = [
+      ["完播率", pct(video.completion_rate), video.completion_rate, baseline.avg_completion_rate],
+      ["收藏率", pct(saveRate), saveRate, baseline.avg_save_rate],
+      ["访问→关注", pct(v2f), v2f, baseline.avg_visit_to_follow_rate],
+      ["高意向信号", formatNum(highIntent), highIntent, baseline.avg_high_intent_signals],
+    ];
+    panel.innerHTML = `<div class="metrics-grid">${metrics.map(metricCell).join("")}</div>`;
+  } catch (e) {
+    panel.innerHTML = "";
+  }
+}
+
+function metricCell([label, valueStr, val, base]) {
+  let delta = "";
+  if (val != null && base) {
+    const d = (val - base) / base;
+    const cls = d > 0.02 ? "up" : d < -0.02 ? "down" : "flat";
+    const sign = d >= 0 ? "+" : "";
+    delta = `<div class="delta ${cls}">${sign}${(d * 100).toFixed(0)}% vs 基线</div>`;
+  }
+  return `<div class="metric"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(valueStr)}</div>${delta}</div>`;
+}
+
+// ---------- 选中视频：扩散曲线（快照）----------
+
+let diffusionChartInstance = null;
+
+async function loadDiffusionChart(id) {
+  const wrap = document.getElementById("diffusion-wrap");
+  const snapshots = await api(`/api/videos/${id}/snapshots`);
+  if (!snapshots || snapshots.length === 0) {
+    wrap.style.display = "none";
+    if (diffusionChartInstance) { diffusionChartInstance.destroy(); diffusionChartInstance = null; }
+    return;
+  }
+  wrap.style.display = "block";
+  const labels = snapshots.map((s) => (s.checked_at || "").slice(0, 16).replace("T", " "));
+  const plays = snapshots.map((s) => s.plays);
+  const interaction = snapshots.map((s) =>
+    s.plays ? +(((s.likes || 0) + (s.comments || 0) + (s.shares || 0) + (s.saves || 0)) / s.plays * 100).toFixed(2) : null
+  );
+  if (diffusionChartInstance) diffusionChartInstance.destroy();
+  diffusionChartInstance = new Chart(document.getElementById("diffusion-chart"), {
+    data: {
+      labels,
+      datasets: [
+        { type: "bar", label: "播放量", data: plays, yAxisID: "y", order: 2, backgroundColor: "rgba(185,164,126,0.55)" },
+        { type: "line", label: "互动率 %", data: interaction, yAxisID: "y1", order: 1, tension: 0.3,
+          borderColor: "#EAE6DC", borderWidth: 1.5, pointRadius: 3, pointBackgroundColor: "#B9A47E" },
+      ],
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        y: { position: "left", ticks: { color: "#8C877C", font: { family: "ui-monospace" } }, grid: { color: "#2C2924" } },
+        y1: { position: "right", ticks: { color: "#8C877C", font: { family: "ui-monospace" } }, grid: { display: false } },
+        x: { ticks: { color: "#8C877C", font: { family: "ui-monospace", size: 10 } }, grid: { display: false } },
+      },
+      plugins: { legend: { labels: { color: "#8C877C", font: { family: "ui-monospace", size: 11 } } } },
+    },
+  });
 }
 
 // ---------- 内容画像 ----------

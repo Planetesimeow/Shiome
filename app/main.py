@@ -5,13 +5,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db, get_conn, video_falls_in_anomaly, get_snapshots
 from app.models import VideoIn, AnomalyPeriodIn, ContentProfileIn, SnapshotIn
 from app.ingestion import parse_creator_center_csv
 from app.analysis.prompts import compute_baseline
+from app.report import build_report_html
 from app.analysis.enhancement import analyze_enhancement
 from app.analysis.content_ideas import analyze_content_ideas
 from app.analysis.trend_forecast import analyze_trend_forecast
@@ -273,6 +274,29 @@ def trend_data():
                FROM videos ORDER BY publish_date ASC"""
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# ---------- 报告导出 ----------
+
+@app.get("/api/baseline")
+def get_baseline():
+    """账号基线（非异常期均值），给前端指标面板算 Δ 用。"""
+    with get_conn() as conn:
+        return compute_baseline(conn)
+
+
+@app.get("/api/report", response_class=HTMLResponse)
+def get_report(download: int = 0):
+    """生成自包含的账号级 HTML 报告（只用已缓存的分析结果，不触发 API 调用）。
+    加 ?download=1 时作为附件下载成单个 .html 文件。"""
+    from datetime import datetime
+    with get_conn() as conn:
+        report_html = build_report_html(conn)
+    headers = {}
+    if download:
+        fname = f"shiome_report_{datetime.now():%Y-%m-%d}.html"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return HTMLResponse(content=report_html, headers=headers)
 
 
 # ---------- 前端 ----------

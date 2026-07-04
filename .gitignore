@@ -12,6 +12,9 @@ app/data/
 # Test artifacts — never upload test results (dated *_Test files live here)
 test_output/
 
+# Source logo originals (~4MB); app serves the small processed copies in app/static/img/
+/image/
+
 # Python
 __pycache__/
 *.py[cod]

@@ -3,15 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>潮目 | Shiome</title>
+<title>潮目 Shiome · 抖音数据分析</title>
+<link rel="icon" type="image/png" href="/static/img/favicon.png">
 <link rel="stylesheet" href="/static/style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
 
 <header>
-  <h1>潮目 <span class="eyebrow">SHIOME · 満電暴走兔</span></h1>
-  <span class="status" id="status-line">加载中...</span>
+  <div class="brand-wrap">
+    <img class="brand-logo" src="/static/img/logo.png" alt="潮目 Shiome">
+    <span class="brand-sub">満電暴走兔 · 抖音数据分析</span>
+  </div>
+  <div class="header-actions">
+    <span class="status" id="status-line">加载中...</span>
+    <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出报告</a>
+  </div>
 </header>
 
 <main>
@@ -33,7 +40,11 @@
       <div class="legend-note"><span class="swatch"></span>阴影区间 = 已标记的异常期（不计入基线）</div>
     </div>
 
-    <div id="detail-empty" class="empty-state">从左侧选一条视频，查看分析</div>
+    <div id="detail-empty" class="empty-state">
+      <img class="empty-mark" src="/static/img/favicon.png" alt="">
+      <p>从左侧选择一条视频，查看五个维度的分析<br>
+      还没有数据？先从创作者中心导出 CSV，在左上角导入</p>
+    </div>
 
     <div id="detail-view" style="display:none;">
       <details class="profile-panel" id="profile-panel">
@@ -62,6 +73,13 @@
           <ul id="snapshot-list" class="snapshot-list"></ul>
         </div>
       </details>
+
+      <div id="metrics-panel"></div>
+
+      <div class="chart-wrap" id="diffusion-wrap" style="display:none;">
+        <div class="chart-title">扩散曲线（快照：播放量 + 互动率）</div>
+        <canvas id="diffusion-chart"></canvas>
+      </div>
 
       <div class="tabs">
         <div class="tab active" data-type="enhancement">增强方向</div>
