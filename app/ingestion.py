@@ -15,6 +15,7 @@ from datetime import datetime
 
 # 我们的字段 -> 可能出现的原始表头（全部小写比较）
 COLUMN_ALIASES = {
+    "douyin_video_id": ["视频id", "作品id", "video_id"],
     "title": ["视频标题", "标题", "title"],
     "publish_date": ["发布时间", "发布日期", "publish_date", "date"],
     "plays": ["播放量", "播放数", "plays", "views"],
@@ -33,6 +34,35 @@ NUMERIC_FIELDS = {
     "profile_visits", "new_followers",
 }
 PERCENT_FIELDS = {"completion_rate"}
+FLOAT_FIELDS = {"avg_watch_time"}  # 秒数，可能带"秒"后缀或 m:ss 格式
+
+
+def _parse_number(raw: str) -> float:
+    """
+    宽容地把创作者中心的数字文本转成 float：
+    "1,234" / "1.2万" / "3.5w" / "21秒" / "0:21"(分:秒) 都能处理。
+    解析不了就抛 ValueError，由上层按行收集错误。
+    """
+    s = raw.strip().replace(",", "").replace(" ", "")
+    if not s:
+        raise ValueError("空值")
+    if ":" in s:  # m:ss 或 h:mm:ss 时长
+        parts = s.split(":")
+        if all(p.isdigit() for p in parts):
+            sec = 0
+            for p in parts:
+                sec = sec * 60 + int(p)
+            return float(sec)
+    # 去掉常见单位后缀
+    for suffix in ("秒", "s", "S", "次", "人"):
+        if s.endswith(suffix):
+            s = s[: -len(suffix)]
+    mult = 1.0
+    if s.endswith(("万", "w", "W")):
+        mult, s = 1e4, s[:-1]
+    elif s.endswith("亿"):
+        mult, s = 1e8, s[:-1]
+    return float(s) * mult
 
 
 def _build_header_map(header_row: list[str]) -> dict[str, int]:
@@ -48,17 +78,19 @@ def _build_header_map(header_row: list[str]) -> dict[str, int]:
 
 
 def _parse_value(field: str, raw: str):
-    raw = (raw or "").strip().replace(",", "")
+    raw = (raw or "").strip()
     if not raw:
         return None
     if field in PERCENT_FIELDS:
         # 支持 "35.2%" 或 "0.352" 两种写法
         if raw.endswith("%"):
-            return float(raw[:-1]) / 100
-        val = float(raw)
+            return _parse_number(raw[:-1]) / 100
+        val = _parse_number(raw)
         return val / 100 if val > 1 else val
     if field in NUMERIC_FIELDS:
-        return int(float(raw))
+        return int(_parse_number(raw))
+    if field in FLOAT_FIELDS:
+        return _parse_number(raw)
     if field == "publish_date":
         # 尝试几种常见日期格式，都失败就原样返回，导入时人工修正
         for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M"):
@@ -70,16 +102,17 @@ def _parse_value(field: str, raw: str):
     return raw
 
 
-def parse_creator_center_csv(file_bytes: bytes) -> list[dict]:
+def parse_creator_center_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
     """
-    解析创作者中心导出的 CSV，返回一批 dict，字段名对齐 models.VideoIn。
-    未能识别的原始列会整体存进 raw_data，不会丢数据。
+    解析创作者中心导出的 CSV，返回 (records, errors)。
+    records 的字段名对齐 models.VideoIn；未能识别的原始列整体存进 raw_data，不丢数据。
+    单行解析失败不再让整个导入报错——记进 errors（带行号和原因），其余行照常导入。
     """
     text = file_bytes.decode("utf-8-sig", errors="ignore")
     reader = csv.reader(io.StringIO(text))
     rows = list(reader)
     if not rows:
-        return []
+        return [], []
 
     header = rows[0]
     col_map = _build_header_map(header)
@@ -89,14 +122,24 @@ def parse_creator_center_csv(file_bytes: bytes) -> list[dict]:
             "请检查表头是否被改名，或者在 ingestion.py 的 COLUMN_ALIASES 里加上你的实际表头。"
         )
 
-    records = []
-    for row in rows[1:]:
+    records, errors = [], []
+    for line_no, row in enumerate(rows[1:], start=2):  # 行号按文件计（表头是第1行）
         if not row or not any(row):
             continue
-        record = {}
+        record, row_errors = {}, []
         for field, idx in col_map.items():
-            if idx < len(row):
+            if idx >= len(row):
+                continue
+            try:
                 record[field] = _parse_value(field, row[idx])
+            except (ValueError, TypeError) as e:
+                row_errors.append(f"{field}='{row[idx]}' ({e})")
+        if not record.get("title") or not record.get("publish_date"):
+            errors.append({"line": line_no, "error": "缺标题或发布时间；" + "；".join(row_errors)})
+            continue
+        if row_errors:
+            # 个别字段坏了不整行丢弃：坏字段置空，原始值在 raw_data 里还能找回
+            errors.append({"line": line_no, "error": "部分字段未解析：" + "；".join(row_errors)})
         record["raw_data"] = json.dumps(dict(zip(header, row)), ensure_ascii=False)
         records.append(record)
-    return records
+    return records, errors

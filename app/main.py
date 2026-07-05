@@ -8,7 +8,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.database import init_db, get_conn, video_falls_in_anomaly, get_snapshots
+from contextlib import asynccontextmanager
+
+from app.database import init_db, get_conn, video_falls_in_anomaly, get_snapshots, backup_db
 from app.models import VideoIn, AnomalyPeriodIn, ContentProfileIn, SnapshotIn
 from app.ingestion import parse_creator_center_csv
 from app.analysis.prompts import compute_baseline
@@ -19,13 +21,16 @@ from app.analysis.trend_forecast import analyze_trend_forecast
 from app.analysis.pool_diagnosis import analyze_pool_tier
 from app.analysis.creator_profile import analyze_creator_profile
 
-app = FastAPI(title="潮目 Shiome")
-STATIC_DIR = Path(__file__).parent / "static"
 
-
-@app.on_event("startup")
-def startup():
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     init_db()
+    backup_db()  # 每天首启快照一份，防 Dropbox 同步弄坏唯一的手录数据
+    yield
+
+
+app = FastAPI(title="潮目 Shiome", lifespan=lifespan)
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 # ---------- 视频数据 ----------
@@ -55,33 +60,73 @@ def add_video(video: VideoIn):
 
 @app.post("/api/videos/import")
 async def import_csv(file: UploadFile = File(...)):
+    """
+    导入创作者中心 CSV。重复导入不再产生重复行：
+    有视频ID列时按 douyin_video_id 匹配，否则按 (标题, 发布日期) 匹配；
+    命中就只更新数据指标列（不碰手动填的内容画像/备注），没命中才插入。
+    单行解析失败会被跳过并逐行报告，不再整个导入失败。
+    """
     content = await file.read()
     try:
-        records = parse_creator_center_csv(content)
+        records, errors = parse_creator_center_csv(content)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    inserted = 0
+    inserted = updated = 0
     with get_conn() as conn:
         for r in records:
             anomaly = video_falls_in_anomaly(conn, r.get("publish_date", ""))
-            conn.execute(
-                """
-                INSERT INTO videos (platform, title, publish_date, plays, likes, comments, shares,
-                    saves, completion_rate, avg_watch_time, profile_visits, new_followers,
-                    is_anomaly_period, raw_data)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    "douyin",  # 创作者中心 CSV 就是抖音；v2.0.0 接别的平台再参数化
-                    r.get("title"), r.get("publish_date"), r.get("plays", 0), r.get("likes", 0),
-                    r.get("comments", 0), r.get("shares", 0), r.get("saves", 0),
-                    r.get("completion_rate"), r.get("avg_watch_time"), r.get("profile_visits", 0),
-                    r.get("new_followers", 0), int(anomaly), r.get("raw_data"),
-                ),
-            )
-            inserted += 1
-    return {"inserted": inserted}
+            existing = None
+            if r.get("douyin_video_id"):
+                existing = conn.execute(
+                    "SELECT id FROM videos WHERE douyin_video_id = ?",
+                    (r["douyin_video_id"],),
+                ).fetchone()
+            if existing is None:
+                existing = conn.execute(
+                    "SELECT id FROM videos WHERE title = ? AND publish_date = ?",
+                    (r.get("title"), r.get("publish_date")),
+                ).fetchone()
+
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE videos SET
+                        douyin_video_id = COALESCE(?, douyin_video_id),
+                        plays = ?, likes = ?, comments = ?, shares = ?, saves = ?,
+                        completion_rate = ?, avg_watch_time = ?, profile_visits = ?,
+                        new_followers = ?, is_anomaly_period = ?, raw_data = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        r.get("douyin_video_id"),
+                        r.get("plays", 0), r.get("likes", 0), r.get("comments", 0),
+                        r.get("shares", 0), r.get("saves", 0), r.get("completion_rate"),
+                        r.get("avg_watch_time"), r.get("profile_visits", 0),
+                        r.get("new_followers", 0), int(anomaly), r.get("raw_data"),
+                        existing["id"],
+                    ),
+                )
+                updated += 1
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO videos (platform, douyin_video_id, title, publish_date, plays,
+                        likes, comments, shares, saves, completion_rate, avg_watch_time,
+                        profile_visits, new_followers, is_anomaly_period, raw_data)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        "douyin",  # 创作者中心 CSV 就是抖音；v2.0.0 接别的平台再参数化
+                        r.get("douyin_video_id"), r.get("title"), r.get("publish_date"),
+                        r.get("plays", 0), r.get("likes", 0), r.get("comments", 0),
+                        r.get("shares", 0), r.get("saves", 0), r.get("completion_rate"),
+                        r.get("avg_watch_time"), r.get("profile_visits", 0),
+                        r.get("new_followers", 0), int(anomaly), r.get("raw_data"),
+                    ),
+                )
+                inserted += 1
+    return {"inserted": inserted, "updated": updated, "errors": errors}
 
 
 @app.get("/api/videos")

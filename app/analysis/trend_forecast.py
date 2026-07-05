@@ -28,16 +28,25 @@ def build_system_prompt(platform: str) -> str:
 - 每个判断都要给置信度（低/中/高），并说明置信度低的原因（比如样本量不够、
   这条视频落在异常期附近等）。
 - 明确给出接下来该盯哪几个指标来验证/推翻这个判断。
-- 只返回 JSON，不要任何其他文字，格式：
-{{
-  "stage_assessment": "根据现有数据判断这条视频现在处于流量生命周期的哪个阶段",
-  "likely_trajectory": "接下来可能的走向，用推断的语气",
-  "confidence": "低/中/高",
-  "confidence_reason": "为什么是这个置信度",
-  "watch_metrics": ["接下来N小时/天该盯的具体指标，用来验证判断"],
-  "caveat": "固定包含：这是基于历史规律的推断，不是平台官方数据"
-}}
 """
+
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "stage_assessment": {"type": "string",
+                             "description": "根据现有数据判断这条视频现在处于流量生命周期的哪个阶段"},
+        "likely_trajectory": {"type": "string", "description": "接下来可能的走向，用推断的语气"},
+        "confidence": {"type": "string", "enum": ["低", "中", "高"]},
+        "confidence_reason": {"type": "string", "description": "为什么是这个置信度"},
+        "watch_metrics": {"type": "array", "items": {"type": "string"},
+                          "description": "接下来N小时/天该盯的具体指标，用来验证判断"},
+        "caveat": {"type": "string",
+                   "description": "固定包含：这是基于历史规律的推断，不是平台官方数据"},
+    },
+    "required": ["stage_assessment", "likely_trajectory", "confidence",
+                 "confidence_reason", "watch_metrics", "caveat"],
+}
 
 
 def analyze_trend_forecast(video: dict, historical_pattern: list[dict]) -> dict:
@@ -51,6 +60,6 @@ def analyze_trend_forecast(video: dict, historical_pattern: list[dict]) -> dict:
 请给出流量趋势推断。
 """
     system_prompt = build_system_prompt(video.get("platform", "douyin"))
-    result = call_claude_json(system_prompt, user_content)
+    result = call_claude_json(system_prompt, user_content, schema=OUTPUT_SCHEMA)
     save_result(video.get("id"), "trend_forecast", result)
     return result

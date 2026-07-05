@@ -38,17 +38,29 @@ def build_system_prompt(platform: str) -> str:
   并给出你据以区分的依据；不要一看量不涨就说限流（限流常被过度归因）。
 - 快照数量少（比如只有1-2个时间点）的时候，如实降低置信度，
   不要硬造一个听起来很确定的判断。
-- 只返回 JSON，不要任何其他文字，格式：
-{{
-  "curve_shape": "健康爬升 / 冻结疑似限流 / 断崖归零疑似审核 / 自然衰减 / 数据不足无法判断",
-  "shape_confidence": "低/中/高",
-  "diffusion_stage": "推断现在大概扩散到哪个阶段（核心圈/相邻兴趣圈/泛化人群/已收敛封顶）；看不出就说看不出",
-  "bottleneck_signal": "最可能拖住继续扩散的信号（如完播、评论相关度、关注转化、收藏等）；没有明显卡点填 null",
-  "throttle_vs_decay": "如果量走平：这是冻结(疑似限流)还是自然衰减(平滑收敛)，以及区分依据；不适用填 null",
-  "unlock_actions": ["针对 bottleneck_signal 的具体、可执行剪辑/结构改动建议"],
-  "caveat": "固定说明：抖音没有离散流量池、真实算法是黑箱，这是基于快照曲线形状的定性推断，不是平台真实数据"
-}}
 """
+
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "curve_shape": {"type": "string",
+                        "enum": ["健康爬升", "冻结疑似限流", "断崖归零疑似审核", "自然衰减", "数据不足无法判断"]},
+        "shape_confidence": {"type": "string", "enum": ["低", "中", "高"]},
+        "diffusion_stage": {"type": "string",
+                            "description": "推断现在大概扩散到哪个阶段（核心圈/相邻兴趣圈/泛化人群/已收敛封顶）；看不出就说看不出"},
+        "bottleneck_signal": {"type": ["string", "null"],
+                              "description": "最可能拖住继续扩散的信号（如完播、评论相关度、关注转化、收藏等）；没有明显卡点填 null"},
+        "throttle_vs_decay": {"type": ["string", "null"],
+                              "description": "如果量走平：这是冻结(疑似限流)还是自然衰减(平滑收敛)，以及区分依据；不适用填 null"},
+        "unlock_actions": {"type": "array", "items": {"type": "string"},
+                           "description": "针对 bottleneck_signal 的具体、可执行剪辑/结构改动建议"},
+        "caveat": {"type": "string",
+                   "description": "固定说明：抖音没有离散流量池、真实算法是黑箱，这是基于快照曲线形状的定性推断，不是平台真实数据"},
+    },
+    "required": ["curve_shape", "shape_confidence", "diffusion_stage",
+                 "bottleneck_signal", "throttle_vs_decay", "unlock_actions", "caveat"],
+}
 
 
 def analyze_pool_tier(video: dict, snapshots: list[dict], baseline: dict) -> dict:
@@ -75,6 +87,6 @@ def analyze_pool_tier(video: dict, snapshots: list[dict], baseline: dict) -> dic
 请给出扩散曲线诊断。
 """
     system_prompt = build_system_prompt(video.get("platform", "douyin"))
-    result = call_claude_json(system_prompt, user_content)
+    result = call_claude_json(system_prompt, user_content, schema=OUTPUT_SCHEMA)
     save_result(video.get("id"), "pool_diagnosis", result)
     return result

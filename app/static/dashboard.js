@@ -156,7 +156,13 @@ async function loadResultForActiveTab() {
   const cached = await api(`/api/analyze/results?${query}`);
 
   if (cached.length > 0) {
-    renderResult(type, cached[0].result_json);
+    const row = cached[0];
+    renderResult(type, row.result_json, {
+      model: row.model_used,
+      created: row.created_at,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+    });
   } else {
     container.innerHTML = `
       <div class="empty-state">
@@ -182,10 +188,20 @@ async function runAnalysis(type) {
   }
 }
 
-function renderResult(type, data) {
+function renderResult(type, data, rowMeta) {
   const container = document.getElementById("result-container");
+  if (data._api_error) {
+    container.innerHTML = `
+      <div class="result-card">
+        <h3>API 调用失败${data.retryable ? "（可重试）" : ""}</h3>
+        <p>${escapeHtml(data._api_error)}</p>
+        <button class="primary" onclick="runAnalysis('${type}')">重试</button>
+      </div>`;
+    return;
+  }
   if (data._parse_error) {
-    container.innerHTML = `<div class="result-card"><h3>解析失败</h3><p>${escapeHtml(data.raw_text)}</p></div>`;
+    container.innerHTML = `<div class="result-card"><h3>解析失败</h3><p>${escapeHtml(data.raw_text)}</p>
+      <button class="primary" onclick="runAnalysis('${type}')">重试</button></div>`;
     return;
   }
 
@@ -229,6 +245,16 @@ function renderResult(type, data) {
     if (data.text_and_music_style) html += `<h3>文字 / 配乐风格</h3><p>${escapeHtml(data.text_and_music_style)}</p>`;
     if (data.matrix_assessment) html += `<h3>矩阵结构评估</h3><p>${escapeHtml(data.matrix_assessment)}</p>`;
     html += renderList("矩阵调整建议", data.matrix_recommendation);
+  }
+
+  const m = data._meta || {};
+  const model = rowMeta?.model || m.model;
+  const created = rowMeta?.created ? rowMeta.created.slice(0, 16).replace("T", " ") : "刚刚";
+  const inTok = rowMeta?.inputTokens ?? m.input_tokens;
+  const outTok = rowMeta?.outputTokens ?? m.output_tokens;
+  if (model) {
+    const tok = inTok != null ? ` · ${formatNum(inTok)}+${formatNum(outTok)} tokens` : "";
+    html += `<div class="caveat">分析于 ${escapeHtml(created)} · ${escapeHtml(model)}${tok} · 数据快照截至分析时刻</div>`;
   }
 
   html += `</div>`;
@@ -371,7 +397,10 @@ async function addSnapshot() {
     plays: Number(document.getElementById("sn-plays").value) || 0,
     likes: Number(document.getElementById("sn-likes").value) || 0,
     comments: Number(document.getElementById("sn-comments").value) || 0,
+    shares: Number(document.getElementById("sn-shares").value) || 0,
     saves: Number(document.getElementById("sn-saves").value) || 0,
+    profile_visits: Number(document.getElementById("sn-profile_visits").value) || 0,
+    new_followers: Number(document.getElementById("sn-new_followers").value) || 0,
     completion_rate: document.getElementById("sn-completion").value
       ? Number(document.getElementById("sn-completion").value) / 100
       : null,
@@ -395,9 +424,16 @@ document.getElementById("csv-input").addEventListener("change", async (e) => {
   document.getElementById("status-line").textContent = "导入中...";
   try {
     const result = await api("/api/videos/import", { method: "POST", body: formData });
-    document.getElementById("status-line").textContent = `导入了 ${result.inserted} 条`;
+    let msg = `新增 ${result.inserted} 条，更新 ${result.updated} 条`;
+    if (result.errors?.length) {
+      msg += `，${result.errors.length} 行有问题`;
+      console.warn("导入问题行：", result.errors);
+      alert("部分行未完整导入：\n" + result.errors.map((e) => `第${e.line}行：${e.error}`).join("\n"));
+    }
+    document.getElementById("status-line").textContent = msg;
     await loadVideos();
     await loadTrendChart();
+    await loadHeroBaseline();
   } catch (err) {
     document.getElementById("status-line").textContent = "导入失败: " + err.message;
   }

@@ -8,7 +8,8 @@
 import os
 import re
 import json
-from anthropic import Anthropic
+import time
+from anthropic import Anthropic, APIError, APIConnectionError, APIStatusError, RateLimitError
 from app.database import get_conn
 
 _client = None
@@ -94,9 +95,11 @@ def get_mechanism_context(platform: str | None) -> str:
         or _PLATFORM_STUB.format(platform=platform)
 
 
-def compute_baseline(conn) -> dict:
+def compute_baseline(conn, window: int = 20) -> dict:
     """
     账号级基线指标，只用非异常期的视频计算，避免限流期的数据拉低/污染判断。
+    只取最近 window 条：基线要代表"当前状态"，全历史平均会把早期摸索阶段的数据
+    掺进来，让进步中的账号每条新视频的 Δ 都显得虚高/失真。
     """
     row = conn.execute(
         """
@@ -107,9 +110,14 @@ def compute_baseline(conn) -> dict:
             AVG(CAST(profile_visits AS FLOAT) / NULLIF(plays, 0)) as avg_profile_visit_rate,
             AVG(CAST(new_followers AS FLOAT) / NULLIF(profile_visits, 0)) as avg_visit_to_follow_rate,
             AVG(high_intent_comments + high_intent_dms) as avg_high_intent_signals
-        FROM videos
-        WHERE is_anomaly_period = 0
-        """
+        FROM (
+            SELECT * FROM videos
+            WHERE is_anomaly_period = 0
+            ORDER BY publish_date DESC
+            LIMIT ?
+        )
+        """,
+        (window,),
     ).fetchone()
     return dict(row) if row else {}
 
@@ -128,27 +136,78 @@ def _extract_json(text: str) -> str:
     return t
 
 
-def call_claude_json(system: str, user_content: str) -> dict:
+def call_claude_json(system: str, user_content: str, schema: dict | None = None) -> dict:
     """
-    调用 Claude，要求只返回 JSON。解析失败时把原始文本包一层返回，
-    方便你在 dashboard 里看到到底是格式问题还是内容问题。
+    调用 Claude 拿结构化结果。
+
+    - 传 schema 时用工具强制 JSON（tool_choice 指定 emit_result），模型只能按 schema
+      提交参数，从结构上消灭"JSON 前后多写说明文字"导致的解析失败。
+    - API 层错误（key 失效/限流/网络）不再往上抛 500，而是返回
+      {"_api_error": 人话, "retryable": bool}，由前端展示并提供重试。
+    - 附带 _meta（模型/token 用量/耗时），save_result 会存进库，成本可查。
     """
-    resp = get_client().messages.create(
+    kwargs = dict(
         model=MODEL,
         max_tokens=3000,
         system=system,
         messages=[{"role": "user", "content": user_content}],
     )
-    text = "".join(block.text for block in resp.content if block.type == "text")
+    if schema is not None:
+        kwargs["tools"] = [{
+            "name": "emit_result",
+            "description": "提交结构化分析结果。所有字段含义见参数说明。",
+            "input_schema": schema,
+        }]
+        kwargs["tool_choice"] = {"type": "tool", "name": "emit_result"}
+
+    t0 = time.time()
     try:
-        return json.loads(_extract_json(text))
-    except json.JSONDecodeError:
-        return {"_parse_error": True, "raw_text": text}
+        resp = get_client().messages.create(**kwargs)
+    except (APIConnectionError, RateLimitError) as e:
+        return {"_api_error": f"网络/限流问题（可重试）：{e}", "retryable": True}
+    except APIStatusError as e:
+        retryable = e.status_code >= 500
+        return {"_api_error": f"API 返回 {e.status_code}：{e.message}", "retryable": retryable}
+    except APIError as e:
+        return {"_api_error": str(e), "retryable": False}
+
+    meta = {
+        "model": MODEL,
+        "input_tokens": resp.usage.input_tokens,
+        "output_tokens": resp.usage.output_tokens,
+        "duration_ms": int((time.time() - t0) * 1000),
+    }
+
+    result = None
+    if schema is not None:
+        for block in resp.content:
+            if block.type == "tool_use" and block.name == "emit_result":
+                result = block.input
+                break
+    if result is None:
+        text = "".join(block.text for block in resp.content if block.type == "text")
+        try:
+            result = json.loads(_extract_json(text))
+        except json.JSONDecodeError:
+            return {"_parse_error": True, "raw_text": text, "_meta": meta}
+    if isinstance(result, dict):
+        result["_meta"] = meta
+    return result
 
 
 def save_result(video_id: int | None, analysis_type: str, result: dict):
+    if result.get("_api_error"):
+        return  # API 没打通的调用不落库，避免污染"最新结果"
+    meta = result.get("_meta") or {}
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO analysis_results (video_id, analysis_type, result_json, model_used) VALUES (?, ?, ?, ?)",
-            (video_id, analysis_type, json.dumps(result, ensure_ascii=False), MODEL),
+            """INSERT INTO analysis_results
+               (video_id, analysis_type, result_json, model_used,
+                input_tokens, output_tokens, duration_ms)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                video_id, analysis_type, json.dumps(result, ensure_ascii=False),
+                meta.get("model", MODEL), meta.get("input_tokens"),
+                meta.get("output_tokens"), meta.get("duration_ms"),
+            ),
         )

@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS analysis_results (
     analysis_type TEXT NOT NULL,         -- enhancement / content_ideas / trend_forecast / pool_diagnosis / creator_profile
     result_json TEXT NOT NULL,
     model_used TEXT,
+    input_tokens INTEGER,                -- 成本可见性：这次分析花了多少 token
+    output_tokens INTEGER,
+    duration_ms INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(video_id) REFERENCES videos(id)
 );
@@ -87,6 +90,10 @@ MIGRATIONS = [
     "ALTER TABLE videos ADD COLUMN hook_description TEXT",
     "ALTER TABLE videos ADD COLUMN content_pillar TEXT",
     "ALTER TABLE videos ADD COLUMN platform TEXT NOT NULL DEFAULT 'douyin'",
+    # 每次分析的成本可见性：token 用量 + 耗时
+    "ALTER TABLE analysis_results ADD COLUMN input_tokens INTEGER",
+    "ALTER TABLE analysis_results ADD COLUMN output_tokens INTEGER",
+    "ALTER TABLE analysis_results ADD COLUMN duration_ms INTEGER",
 ]
 
 
@@ -99,6 +106,32 @@ def init_db():
                 conn.execute(stmt)
             except sqlite3.OperationalError:
                 pass  # 列已经存在，正常情况
+
+
+def backup_db(keep: int = 10):
+    """
+    每天第一次启动时把数据库快照备份到 <db目录>/backups/，保留最近 keep 份。
+    动机：快照/内容画像是手动录入的、没有其他来源，而数据库文件又住在 Dropbox
+    同步目录里（同步工具抓到写入中途的库文件有损坏风险）。时点快照文件对同步是安全的。
+    用 sqlite 官方 backup API 而不是直接 copy，避免拷到写入一半的状态。
+    """
+    if not DB_PATH.exists():
+        return None
+    backup_dir = DB_PATH.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    from datetime import date
+    dest = backup_dir / f"{DB_PATH.stem}-{date.today().isoformat()}{DB_PATH.suffix}"
+    if dest.exists():
+        return None  # 今天已备份过
+    src, dst = sqlite3.connect(DB_PATH), sqlite3.connect(dest)
+    try:
+        src.backup(dst)
+    finally:
+        dst.close()
+        src.close()
+    for old in sorted(backup_dir.glob(f"{DB_PATH.stem}-*{DB_PATH.suffix}"))[:-keep]:
+        old.unlink()
+    return dest
 
 
 @contextmanager

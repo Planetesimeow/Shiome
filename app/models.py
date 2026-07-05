@@ -1,9 +1,12 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
+
+# v1.0.0 只有 douyin；小红书/B站 v2.0.0 接入时在这里加值即可
+Platform = Literal["douyin", "xiaohongshu", "bilibili"]
 
 
 class VideoIn(BaseModel):
-    platform: str = "douyin"  # v1.0.0 只有 douyin；小红书/B站 v2.0.0
+    platform: Platform = "douyin"
     douyin_video_id: Optional[str] = None
     title: str
     publish_date: str  # "YYYY-MM-DD"

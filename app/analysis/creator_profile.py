@@ -25,15 +25,25 @@ SYSTEM_PROMPT = f"""
   咨询服务的客户。判断现在的内容里，"建立专业感/信任"类和"转化触发"类
   （比如引导私信、引导进群）的比例是否合理，而不是单纯看内容够不够多元、
   够不够好玩。
-- 只返回 JSON，不要任何其他文字，格式：
-{{
-  "content_direction_breakdown": ["现在实际在做的几类内容方向，附大致占比或条数"],
-  "hook_patterns": ["核心抓人点的模式总结，现在反复在用的钩子类型"],
-  "text_and_music_style": "画面文字风格 + 配乐风格的总结",
-  "matrix_assessment": "内容矩阵结构评估：是否过度集中、信任类与转化类内容比例是否失衡",
-  "matrix_recommendation": ["矩阵结构上的调整建议，是结构性的比重建议，不是具体选题"]
-}}
 """
+
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "content_direction_breakdown": {"type": "array", "items": {"type": "string"},
+                                        "description": "现在实际在做的几类内容方向，附大致占比或条数"},
+        "hook_patterns": {"type": "array", "items": {"type": "string"},
+                          "description": "核心抓人点的模式总结，现在反复在用的钩子类型"},
+        "text_and_music_style": {"type": "string", "description": "画面文字风格 + 配乐风格的总结"},
+        "matrix_assessment": {"type": "string",
+                              "description": "内容矩阵结构评估：是否过度集中、信任类与转化类内容比例是否失衡"},
+        "matrix_recommendation": {"type": "array", "items": {"type": "string"},
+                                  "description": "矩阵结构上的调整建议，是结构性的比重建议，不是具体选题"},
+    },
+    "required": ["content_direction_breakdown", "hook_patterns", "text_and_music_style",
+                 "matrix_assessment", "matrix_recommendation"],
+}
 
 
 def analyze_creator_profile(recent_videos: list[dict]) -> dict:
@@ -45,6 +55,6 @@ def analyze_creator_profile(recent_videos: list[dict]) -> dict:
 最近一批视频里，共 {len(profiled)} 条有内容画像数据（总共取了 {len(recent_videos)} 条视频）：
 {profiled}
 """
-    result = call_claude_json(SYSTEM_PROMPT, user_content)
+    result = call_claude_json(SYSTEM_PROMPT, user_content, schema=OUTPUT_SCHEMA)
     save_result(None, "creator_profile", result)
     return result
