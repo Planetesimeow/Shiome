@@ -11,7 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 
 from app.database import init_db, get_conn, video_falls_in_anomaly, get_snapshots, backup_db
-from app.models import VideoIn, AnomalyPeriodIn, ContentProfileIn, SnapshotIn
+from app.models import (
+    VideoIn, AnomalyPeriodIn, ContentProfileIn, SnapshotIn, VisionSaveIn,
+)
+from app.vision import extract_screenshot
 from app.ingestion import parse_creator_center_csv
 from app.analysis.prompts import compute_baseline
 from app.report import build_report_html
@@ -58,6 +61,54 @@ def add_video(video: VideoIn):
         return {"id": cur.lastrowid}
 
 
+# 数据指标列（CSV 导入和截图提取共用的 upsert 白名单）。
+# 内容画像字段（content_summary 等）永远不在这里——那是手动填的，数据同步不许碰。
+_METRIC_COLS = [
+    "douyin_video_id", "duration_sec", "plays", "likes", "comments", "shares", "saves",
+    "completion_rate", "avg_watch_time", "profile_visits", "new_followers",
+    "danmaku_count", "cover_ctr", "bounce_2s_rate", "unfollows", "fan_conversion_rate",
+    "raw_data",
+]
+
+
+def upsert_video(conn, r: dict) -> tuple[int, str]:
+    """
+    按 douyin_video_id（有则优先）或 (title, publish_date) 匹配已有视频：
+    命中→只更新 r 里带值的指标列（None 不覆盖旧值），没命中→插入。
+    返回 (video_id, "inserted"|"updated")。CSV 导入和截图确认入库共用这一条路。
+    """
+    anomaly = video_falls_in_anomaly(conn, r.get("publish_date", ""))
+    existing = None
+    if r.get("douyin_video_id"):
+        existing = conn.execute(
+            "SELECT id FROM videos WHERE douyin_video_id = ?",
+            (r["douyin_video_id"],),
+        ).fetchone()
+    if existing is None:
+        existing = conn.execute(
+            "SELECT id FROM videos WHERE title = ? AND publish_date = ?",
+            (r.get("title"), r.get("publish_date")),
+        ).fetchone()
+
+    present = [(c, r[c]) for c in _METRIC_COLS if r.get(c) is not None]
+    if existing:
+        sets = ", ".join(f"{c} = ?" for c, _ in present)
+        sets = (sets + ", " if sets else "") + "is_anomaly_period = ?"
+        conn.execute(
+            f"UPDATE videos SET {sets} WHERE id = ?",
+            [v for _, v in present] + [int(anomaly), existing["id"]],
+        )
+        return existing["id"], "updated"
+
+    cols = ["platform", "title", "publish_date"] + [c for c, _ in present] + ["is_anomaly_period"]
+    vals = ["douyin", r.get("title"), r.get("publish_date")] + [v for _, v in present] + [int(anomaly)]
+    cur = conn.execute(
+        f"INSERT INTO videos ({','.join(cols)}) VALUES ({','.join('?' * len(vals))})",
+        vals,
+    )
+    return cur.lastrowid, "inserted"
+
+
 @app.post("/api/videos/import")
 async def import_csv(file: UploadFile = File(...)):
     """
@@ -75,57 +126,11 @@ async def import_csv(file: UploadFile = File(...)):
     inserted = updated = 0
     with get_conn() as conn:
         for r in records:
-            anomaly = video_falls_in_anomaly(conn, r.get("publish_date", ""))
-            existing = None
-            if r.get("douyin_video_id"):
-                existing = conn.execute(
-                    "SELECT id FROM videos WHERE douyin_video_id = ?",
-                    (r["douyin_video_id"],),
-                ).fetchone()
-            if existing is None:
-                existing = conn.execute(
-                    "SELECT id FROM videos WHERE title = ? AND publish_date = ?",
-                    (r.get("title"), r.get("publish_date")),
-                ).fetchone()
-
-            if existing:
-                conn.execute(
-                    """
-                    UPDATE videos SET
-                        douyin_video_id = COALESCE(?, douyin_video_id),
-                        plays = ?, likes = ?, comments = ?, shares = ?, saves = ?,
-                        completion_rate = ?, avg_watch_time = ?, profile_visits = ?,
-                        new_followers = ?, is_anomaly_period = ?, raw_data = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        r.get("douyin_video_id"),
-                        r.get("plays", 0), r.get("likes", 0), r.get("comments", 0),
-                        r.get("shares", 0), r.get("saves", 0), r.get("completion_rate"),
-                        r.get("avg_watch_time"), r.get("profile_visits", 0),
-                        r.get("new_followers", 0), int(anomaly), r.get("raw_data"),
-                        existing["id"],
-                    ),
-                )
-                updated += 1
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO videos (platform, douyin_video_id, title, publish_date, plays,
-                        likes, comments, shares, saves, completion_rate, avg_watch_time,
-                        profile_visits, new_followers, is_anomaly_period, raw_data)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """,
-                    (
-                        "douyin",  # 创作者中心 CSV 就是抖音；v2.0.0 接别的平台再参数化
-                        r.get("douyin_video_id"), r.get("title"), r.get("publish_date"),
-                        r.get("plays", 0), r.get("likes", 0), r.get("comments", 0),
-                        r.get("shares", 0), r.get("saves", 0), r.get("completion_rate"),
-                        r.get("avg_watch_time"), r.get("profile_visits", 0),
-                        r.get("new_followers", 0), int(anomaly), r.get("raw_data"),
-                    ),
-                )
+            _, action = upsert_video(conn, r)
+            if action == "inserted":
                 inserted += 1
+            else:
+                updated += 1
     return {"inserted": inserted, "updated": updated, "errors": errors}
 
 
@@ -317,6 +322,98 @@ def trend_data():
                       CAST(saves AS FLOAT) / NULLIF(plays, 0) as save_rate,
                       new_followers, is_anomaly_period
                FROM videos ORDER BY publish_date ASC"""
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ---------- 截图 vision 提取（草稿 → 确认 → 入库） ----------
+
+@app.post("/api/vision/extract")
+async def vision_extract(file: UploadFile = File(...)):
+    """
+    一张创作者中心截图 → 结构化草稿。只提取、不入库——数字必须经人确认。
+    失败时返回 {_api_error, retryable} 信封，前端可重试。
+    """
+    content = await file.read()
+    try:
+        return extract_screenshot(content, file.content_type)
+    except Exception as e:  # 图片本身打不开等本地问题
+        raise HTTPException(400, f"图片无法处理：{e}")
+
+
+@app.post("/api/vision/save")
+def vision_save(payload: VisionSaveIn):
+    """
+    确认面板提交的最终数据入库：
+    - videos 逐条 upsert（私密条目服务端直接拒绝——别人看不到的数据不作数）
+    - 详情页（video_detail）同时给该视频记一条快照（source='vision'，带曲线观察）
+    - account 落 account_metrics
+    """
+    from datetime import datetime, timezone
+
+    saved, updated, skipped_private, snapshots = 0, 0, 0, 0
+    with get_conn() as conn:
+        for v in payload.videos:
+            if v.status == "私密":
+                skipped_private += 1
+                continue
+            if not v.title or not v.publish_datetime:
+                continue  # 没有身份键没法 upsert，前端会要求补全
+            publish_date = v.publish_datetime[:10]
+            record = v.model_dump(exclude={"status", "publish_datetime"})
+            record["publish_date"] = publish_date
+            vid, action = upsert_video(conn, record)
+            if action == "inserted":
+                saved += 1
+            else:
+                updated += 1
+
+            if payload.page_type == "video_detail":
+                checked_at = payload.checked_at or datetime.now(timezone.utc).isoformat()
+                curve_note = None
+                co = payload.curve_observation
+                if co and co.visible:
+                    curve_note = (f"[{co.granularity or 'unknown'}] "
+                                  f"{co.shape_description or ''}"
+                                  f"（形态初判：{co.pattern_guess or '无'}）")
+                conn.execute(
+                    """INSERT INTO video_snapshots
+                       (video_id, checked_at, plays, likes, comments, shares, saves,
+                        completion_rate, new_followers, bounce_2s_rate, source, curve_note)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,'vision',?)""",
+                    (vid, checked_at, v.plays, v.likes, v.comments, v.shares, v.saves,
+                     v.completion_rate, v.new_followers, v.bounce_2s_rate, curve_note),
+                )
+                snapshots += 1
+
+        if payload.account is not None:
+            a = payload.account
+            conn.execute(
+                """INSERT INTO account_metrics
+                   (captured_at, period, plays, profile_visits, likes, comments, shares,
+                    net_followers, unfollows, completion_rate, search_views, cover_ctr,
+                    danmaku, peer_percentiles, raw_json, source)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'vision')""",
+                (
+                    payload.checked_at or datetime.now(timezone.utc).isoformat(),
+                    a.period, a.plays, a.profile_visits, a.likes, a.comments, a.shares,
+                    a.net_followers, a.unfollows, a.completion_rate, a.search_views,
+                    a.cover_ctr, a.danmaku,
+                    json.dumps(a.peer_percentiles, ensure_ascii=False) if a.peer_percentiles else None,
+                    a.model_dump_json(),
+                ),
+            )
+
+    return {"inserted": saved, "updated": updated, "snapshots": snapshots,
+            "skipped_private": skipped_private,
+            "account_saved": payload.account is not None}
+
+
+@app.get("/api/account-metrics")
+def list_account_metrics(limit: int = 30):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM account_metrics ORDER BY captured_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
 

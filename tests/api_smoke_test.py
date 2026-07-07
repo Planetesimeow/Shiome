@@ -104,7 +104,39 @@ def run(with_analysis: bool):
         n_flagged = sum(1 for v in all_videos if v.get("is_anomaly_period"))
         check(f"落在异常期内的视频被自动标记（{n_flagged} 条）", n_flagged >= 1, "期望 >=1 条被标记")
 
-        print("\n[7] 分析类端点（调用 Anthropic API）")
+        print("\n[7] 截图确认入库（vision save，不调 API）")
+        vfix = json.loads((FIX / "vision_confirmed.json").read_text(encoding="utf-8"))
+        r = c.post("/api/vision/save", json=vfix["detail"])
+        j = r.json() if r.status_code == 200 else {}
+        check("POST /api/vision/save (详情页→upsert+快照)",
+              r.status_code == 200 and j.get("snapshots") == 1
+              and (j.get("inserted", 0) + j.get("updated", 0)) == 1, r.text)
+        detail_title = vfix["detail"]["videos"][0]["title"]
+        row = next((v for v in c.get("/api/videos").json() if v["title"] == detail_title), None)
+        check("详情页新字段落库（2s跳出/封面点击率）",
+              row is not None and row.get("bounce_2s_rate") == 0.2716 and row.get("cover_ctr") == 0.621,
+              row)
+        snaps = c.get(f"/api/videos/{row['id']}/snapshots").json() if row else []
+        vis = [s for s in snaps if s.get("source") == "vision"]
+        check("vision 快照带曲线观察 curve_note",
+              len(vis) == 1 and "健康爬升" in (vis[0].get("curve_note") or ""), vis)
+
+        r = c.post("/api/vision/save", json=vfix["list"])
+        j = r.json() if r.status_code == 200 else {}
+        check("POST /api/vision/save (列表页，私密被拒)",
+              r.status_code == 200 and j.get("skipped_private") == 1
+              and (j.get("inserted", 0) + j.get("updated", 0)) == 1, r.text)
+        titles = [v["title"] for v in c.get("/api/videos").json()]
+        check("私密视频确实没入库", "冒烟·私密视频E" not in titles, titles)
+
+        r = c.post("/api/vision/save", json=vfix["account"])
+        j = r.json() if r.status_code == 200 else {}
+        am = c.get("/api/account-metrics").json()
+        check("POST /api/vision/save (账号级→account_metrics)",
+              r.status_code == 200 and j.get("account_saved")
+              and len(am) >= 1 and am[0].get("search_views") == 652, (r.text, am[:1]))
+
+        print("\n[8] 分析类端点 + vision 提取（调用 Anthropic API）")
         if with_analysis:
             target = created_ids[0]
             analysis_paths = [
@@ -119,6 +151,21 @@ def run(with_analysis: bool):
                 body = r.json() if r.status_code == 200 else {}
                 ok = r.status_code == 200 and isinstance(body, dict) and not body.get("_parse_error")
                 check(f"POST {path}", ok, r.text if r.status_code != 200 else body)
+
+            # vision 提取：只在本地有真实截图时测（截图是真实账号数据，不进仓库）
+            shot = pathlib.Path("reference/videodata")
+            shots = sorted(shot.glob("*.png")) if shot.exists() else []
+            if shots:
+                with open(shots[0], "rb") as fh:
+                    r = c.post("/api/vision/extract",
+                               files={"file": (shots[0].name, fh.read(), "image/png")})
+                body = r.json() if r.status_code == 200 else {}
+                ok = (r.status_code == 200 and body.get("page_type") == "video_detail"
+                      and body.get("videos") and not body.get("_api_error"))
+                check(f"POST /api/vision/extract ({shots[0].name})", ok,
+                      r.text[:200] if not ok else "")
+            else:
+                print("  ⏭  vision 提取跳过：本地没有 reference/videodata 截图")
         else:
             print("  ⏭  已跳过（默认不花钱）。确认要测：加 --with-analysis 且设好 ANTHROPIC_API_KEY。")
 

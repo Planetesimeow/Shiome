@@ -1,0 +1,77 @@
+{
+  "_note": "vision 确认入库的模拟 payload（数据插槽）。detail = 单视频详情页含曲线观察；list = 作品列表含一条必须被跳过的私密视频；account = 账号级页面。",
+  "detail": {
+    "page_type": "video_detail",
+    "videos": [
+      {
+        "status": "已发布",
+        "title": "冒烟·体态反差开场A",
+        "publish_datetime": "2026-04-02 22:03",
+        "plays": 43000,
+        "likes": 1550,
+        "comments": 330,
+        "shares": 215,
+        "saves": 910,
+        "danmaku_count": 0,
+        "completion_rate": 0.0129,
+        "bounce_2s_rate": 0.2716,
+        "avg_watch_time": 12,
+        "cover_ctr": 0.621,
+        "new_followers": 262,
+        "unfollows": 1,
+        "fan_conversion_rate": 0.003
+      }
+    ],
+    "account": null,
+    "curve_observation": {
+      "visible": true,
+      "granularity": "每小时",
+      "shape_description": "发布当晚出现主峰，随后回落，第3天有一次小幅二次起量",
+      "pattern_guess": "健康爬升"
+    },
+    "checked_at": "2026-04-05T11:00:00Z"
+  },
+  "list": {
+    "page_type": "video_list",
+    "videos": [
+      {
+        "status": "已发布",
+        "title": "冒烟·列表新视频D",
+        "publish_datetime": "2026-04-18",
+        "plays": 5355,
+        "likes": 57,
+        "comments": 7,
+        "shares": 4
+      },
+      {
+        "status": "私密",
+        "title": "冒烟·私密视频E",
+        "publish_datetime": "2026-04-19",
+        "plays": 999999
+      }
+    ],
+    "account": null,
+    "curve_observation": null,
+    "checked_at": null
+  },
+  "account": {
+    "page_type": "account_overview",
+    "videos": [],
+    "account": {
+      "period": "近30天",
+      "plays": 28000,
+      "profile_visits": 966,
+      "likes": 266,
+      "comments": 70,
+      "shares": 20,
+      "net_followers": 30,
+      "unfollows": 2,
+      "completion_rate": 0.1642,
+      "search_views": 652,
+      "cover_ctr": 0.9669,
+      "peer_percentiles": {"播放量": "高于99.56%", "完播率": "低于63.43%"}
+    },
+    "curve_observation": null,
+    "checked_at": null
+  }
+}

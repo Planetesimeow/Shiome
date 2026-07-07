@@ -439,6 +439,171 @@ document.getElementById("csv-input").addEventListener("change", async (e) => {
   }
 });
 
+// ---------- 截图上传 → 提取草稿 → 确认入库 ----------
+
+const visionDrafts = {}; // cardId -> 提取结果原文
+let visionSeq = 0;
+
+// 视频字段：[key, 标签, 类型] 类型 pct 的展示为百分数，保存时 /100
+const V_FIELDS = [
+  ["title", "标题", "text"], ["publish_datetime", "发布时间", "text"],
+  ["plays", "播放", "int"], ["likes", "点赞", "int"],
+  ["comments", "评论", "int"], ["shares", "分享", "int"],
+  ["saves", "收藏", "int"], ["danmaku_count", "弹幕", "int"],
+  ["completion_rate", "完播率%", "pct"], ["bounce_2s_rate", "2s跳出%", "pct"],
+  ["avg_watch_time", "均播时长s", "num"], ["cover_ctr", "封面点击%", "pct"],
+  ["new_followers", "涨粉", "int"], ["unfollows", "取关", "int"],
+  ["fan_conversion_rate", "粉转化%", "pct"],
+];
+const A_FIELDS = [
+  ["period", "统计口径", "text"], ["plays", "播放", "int"],
+  ["profile_visits", "主页访问", "int"], ["likes", "点赞", "int"],
+  ["comments", "评论", "int"], ["shares", "分享", "int"],
+  ["net_followers", "净增粉", "int"], ["unfollows", "取关", "int"],
+  ["completion_rate", "完播率%", "pct"], ["search_views", "作品搜索", "int"],
+  ["cover_ctr", "封面点击%", "pct"], ["danmaku", "弹幕", "int"],
+];
+
+document.getElementById("shot-input").addEventListener("change", async (e) => {
+  const files = [...e.target.files];
+  e.target.value = "";
+  if (!files.length) return;
+  const panel = document.getElementById("vision-panel");
+  panel.style.display = "block";
+  for (const f of files) {
+    const cardId = `vd-${++visionSeq}`;
+    const holder = document.createElement("div");
+    holder.className = "result-card draft-card";
+    holder.id = cardId;
+    holder.innerHTML = `<div class="card-tag">截图提取中 · ${escapeHtml(f.name)}</div><div class="empty-state">调用 Claude vision 识别中...</div>`;
+    panel.prepend(holder);
+    const fd = new FormData();
+    fd.append("file", f);
+    try {
+      const draft = await api("/api/vision/extract", { method: "POST", body: fd });
+      renderVisionDraft(cardId, f.name, draft);
+    } catch (err) {
+      holder.innerHTML = `<div class="card-tag">${escapeHtml(f.name)}</div><p>提取失败：${escapeHtml(err.message)}</p>`;
+    }
+  }
+});
+
+function fieldInput(cardId, scope, idx, key, label, type, value) {
+  let v = value;
+  if (type === "pct" && v != null) v = +(v * 100).toFixed(2);
+  const shown = v == null ? "" : v;
+  return `<label>${escapeHtml(label)}<input id="${cardId}-${scope}${idx}-${key}"
+    type="${type === "text" ? "text" : "number"}" step="any" value="${escapeHtml(shown)}"></label>`;
+}
+
+function readField(cardId, scope, idx, key, type) {
+  const el = document.getElementById(`${cardId}-${scope}${idx}-${key}`);
+  if (!el || el.value === "") return null;
+  if (type === "text") return el.value;
+  const n = Number(el.value);
+  if (Number.isNaN(n)) return null;
+  return type === "pct" ? n / 100 : type === "int" ? Math.round(n) : n;
+}
+
+const PAGE_TYPE_LABELS = {
+  video_detail: "单视频详情页", video_list: "作品列表",
+  account_overview: "账号数据总览", account_diagnosis: "账号诊断", unknown: "未识别页面",
+};
+
+function renderVisionDraft(cardId, fname, draft) {
+  const holder = document.getElementById(cardId);
+  if (draft._api_error) {
+    holder.innerHTML = `<div class="card-tag">${escapeHtml(fname)}</div>
+      <p>API 调用失败${draft.retryable ? "（可重试）" : ""}：${escapeHtml(draft._api_error)}</p>`;
+    return;
+  }
+  visionDrafts[cardId] = draft;
+  let html = `<div class="card-tag">${escapeHtml(fname)} ·
+    <span class="badge">${escapeHtml(PAGE_TYPE_LABELS[draft.page_type] || draft.page_type)}</span></div>`;
+
+  (draft.videos || []).forEach((v, i) => {
+    if (v.status === "私密") {
+      html += `<div class="draft-video private"><span class="badge warn">私密 · 已跳过</span>
+        <span class="muted-title">${escapeHtml(v.title || "(无标题)")}</span></div>`;
+      return;
+    }
+    html += `<div class="draft-video"><div class="vision-grid">`;
+    V_FIELDS.forEach(([key, label, type]) => { html += fieldInput(cardId, "v", i, key, label, type, v[key]); });
+    html += `</div></div>`;
+  });
+
+  if (draft.account) {
+    html += `<h3>账号级数据</h3><div class="vision-grid">`;
+    A_FIELDS.forEach(([key, label, type]) => { html += fieldInput(cardId, "a", 0, key, label, type, draft.account[key]); });
+    html += `</div>`;
+    if (draft.account.peer_percentiles)
+      html += `<div class="caveat">同行对比：${escapeHtml(JSON.stringify(draft.account.peer_percentiles))}</div>`;
+  }
+
+  const co = draft.curve_observation;
+  if (co && co.visible) {
+    html += `<h3>趋势图观察 <span class="badge">${escapeHtml(co.pattern_guess || "无法判断")}</span></h3>
+      <p>${escapeHtml(co.shape_description || "")}<span class="confidence">${escapeHtml(co.granularity || "")}</span></p>`;
+  }
+  if (draft.page_type === "video_detail") {
+    const now = new Date().toISOString().slice(0, 16);
+    html += `<div class="vision-grid"><label>观察时间（快照 checked_at）
+      <input id="${cardId}-checked_at" type="datetime-local" value="${now}"></label></div>`;
+  }
+  if (draft.notes) html += `<div class="caveat">⚠ 需复核：${escapeHtml(draft.notes)}</div>`;
+
+  const m = draft._meta || {};
+  html += `<div class="draft-actions">
+    <button class="primary" onclick="saveVisionDraft('${cardId}')">确认入库</button>
+    <button class="btn-ghost" onclick="discardVisionDraft('${cardId}')">丢弃</button>
+    <span class="confidence">${m.input_tokens != null ? `${formatNum(m.input_tokens)}+${formatNum(m.output_tokens)} tokens` : ""}</span>
+  </div>`;
+  holder.innerHTML = html;
+}
+
+async function saveVisionDraft(cardId) {
+  const draft = visionDrafts[cardId];
+  if (!draft) return;
+  const videos = (draft.videos || []).map((v, i) => {
+    if (v.status === "私密") return { status: "私密", title: v.title };
+    const out = { status: v.status || "已发布" };
+    V_FIELDS.forEach(([key, , type]) => { out[key] = readField(cardId, "v", i, key, type); });
+    return out;
+  });
+  let account = null;
+  if (draft.account) {
+    account = {};
+    A_FIELDS.forEach(([key, , type]) => { account[key] = readField(cardId, "a", 0, key, type); });
+    account.peer_percentiles = draft.account.peer_percentiles || null;
+  }
+  const checkedEl = document.getElementById(`${cardId}-checked_at`);
+  const payload = {
+    page_type: draft.page_type,
+    videos, account,
+    curve_observation: draft.curve_observation,
+    checked_at: checkedEl?.value ? new Date(checkedEl.value).toISOString() : null,
+  };
+  try {
+    const r = await api("/api/vision/save", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    document.getElementById("status-line").textContent =
+      `入库：新增${r.inserted} 更新${r.updated} 快照${r.snapshots}` +
+      (r.skipped_private ? ` 跳过私密${r.skipped_private}` : "") + (r.account_saved ? " 账号级✓" : "");
+    discardVisionDraft(cardId);
+    await loadVideos(); await loadTrendChart(); await loadHeroBaseline();
+  } catch (err) {
+    document.getElementById("status-line").textContent = "入库失败: " + err.message;
+  }
+}
+
+function discardVisionDraft(cardId) {
+  delete visionDrafts[cardId];
+  document.getElementById(cardId)?.remove();
+  const panel = document.getElementById("vision-panel");
+  if (!panel.children.length) panel.style.display = "none";
+}
+
 // ---------- 初始化 ----------
 
 loadVideos();

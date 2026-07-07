@@ -509,3 +509,56 @@ header .header-actions {
   letter-spacing: 0.06em;
   color: var(--text-muted);
 }
+
+/* ---------- 截图提取确认卡片 ---------- */
+
+#vision-panel { margin-bottom: 20px; }
+
+.draft-card { border-left: 2px solid var(--accent); margin-bottom: 16px; }
+
+.draft-video {
+  border-top: 1px solid var(--border);
+  padding: 12px 0;
+}
+.draft-video:first-of-type { border-top: none; }
+
+.draft-video.private { color: var(--text-muted); }
+.draft-video.private .muted-title { margin-left: 10px; font-size: 12px; }
+
+.vision-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 10px;
+}
+
+.vision-grid label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.vision-grid input {
+  display: block;
+  width: 100%;
+  margin-top: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 6px 8px;
+}
+
+.vision-grid label:first-child { grid-column: span 2; }
+
+.draft-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}

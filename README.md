@@ -51,10 +51,11 @@ Then open http://localhost:8000
 
 ### Getting data in
 
-Douyin's creator center has no API, so:
+Douyin's creator center has no API — and its export file carries only account-level daily plays — so:
 
-1. **CSV import** (recommended) — Creator center → Data → Export, then upload it on the web page. `app/ingestion.py`'s `COLUMN_ALIASES` fuzzy-matches common headers; if an import can't find a column, add your file's header text to that dict.
-2. **Manual entry** — the `POST /api/videos` endpoint accepts one record at a time (a web form for this is not built yet).
+1. **Screenshot upload** (recommended) — screenshot creator-center pages (phone or PC), upload on the dashboard; Claude vision extracts a draft you confirm before saving. Private (私密) videos are skipped automatically. Capture cadence & tips: [docs/capture-guide.md](docs/capture-guide.md).
+2. **CSV import** — Creator center → Data → Export, then upload it on the web page. `app/ingestion.py`'s `COLUMN_ALIASES` fuzzy-matches common headers; if an import can't find a column, add your file's header text to that dict.
+3. **Manual entry** — the `POST /api/videos` endpoint accepts one record at a time (a web form for this is not built yet).
 
 Two dimensions (pool diagnosis, creator profile) need extra manual data — time snapshots and content descriptions — enterable via the panel on the right of the dashboard, or the `POST /api/videos/{id}/snapshots` and `PATCH /api/videos/{id}/content-profile` endpoints.
 
@@ -130,10 +131,11 @@ uvicorn app.main:app --reload
 
 ### 数据怎么进来
 
-抖音创作者中心没有 API，所以：
+抖音创作者中心没有 API——导出文件也只有账号级"日期+播放量"两列——所以：
 
-1. **CSV 导入**（推荐）——创作者中心 → 数据 → 导出，然后在网页上上传。`app/ingestion.py` 的 `COLUMN_ALIASES` 会对常见表头做模糊匹配；如果导入找不到某列，把你文件里的表头文字加进那个字典即可。
-2. **手动录入**——`POST /api/videos` 接口一次收一条数据（对应的网页表单还没做）。
+1. **截图上传**（推荐）——手机/PC 截创作者中心页面，在 dashboard 上传；Claude vision 提取成草稿，你确认后才入库。私密视频自动跳过。采集节奏和技巧见 [docs/capture-guide.md](docs/capture-guide.md)。
+2. **CSV 导入**——创作者中心 → 数据 → 导出，然后在网页上上传。`app/ingestion.py` 的 `COLUMN_ALIASES` 会对常见表头做模糊匹配；如果导入找不到某列，把你文件里的表头文字加进那个字典即可。
+3. **手动录入**——`POST /api/videos` 接口一次收一条数据（对应的网页表单还没做）。
 
 有两个维度（流量池定位、内容画像）需要额外的手动数据——时间快照和内容描述——可以在 dashboard 右侧面板录入，或用 `POST /api/videos/{id}/snapshots` 和 `PATCH /api/videos/{id}/content-profile` 接口。
 

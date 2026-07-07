@@ -15,6 +15,18 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 ### [Unreleased]
 
 **Added**
+- Vision ingest: upload creator-center screenshots (phone or PC — layout-agnostic) →
+  Claude vision extracts a draft → confirm/edit in the dashboard → saved through the
+  same upsert path as CSV. 私密 (private) videos are flagged and refused server-side.
+- Per-video detail-page fields the exports never had: 完播率, 2s跳出率, 弹幕, 封面点击率,
+  涨粉/取关, 粉丝转化 — new nullable columns on `videos`/`video_snapshots`.
+- New `account_metrics` table for account-level pages (主页访问, 净增粉/取关, 账号完播率,
+  作品搜索, 同行百分位) + `GET /api/account-metrics`.
+- Detail-page hourly trend chart is read *qualitatively* (shape description + pattern
+  guess) and stored as `curve_note` on vision snapshots; 扩散诊断 uses it as corroborating
+  eyewitness alongside numeric snapshots.
+- Capture protocol guide: `docs/capture-guide.md` (per-video +24h/+3d; weekly list +
+  account shots; no folder sorting needed).
 - Standalone dark-theme HTML account report (`GET /api/report`, `?download=1`), rendered
   from cached analyses only — no new API cost.
 - Dashboard: hero landing with logo/stats/actions, per-video metrics vs baseline,
@@ -59,6 +71,17 @@ Initial public release of the runnable skeleton.
 ### [未发布]
 
 **新增**
+- 截图采集：上传创作者中心截图（手机/PC 排版均可）→ Claude vision 提取草稿 →
+  dashboard 内确认/修改 → 与 CSV 同一条 upsert 路径入库。私密视频自动标记并被
+  服务端拒绝入库。
+- 导出文件里从来没有的详情页字段：完播率、2s跳出率、弹幕、封面点击率、涨粉/取关、
+  粉丝转化——`videos`/`video_snapshots` 新增可空列。
+- 新增 `account_metrics` 表承接账号级页面（主页访问、净增粉/取关、账号完播率、
+  作品搜索、同行百分位）+ `GET /api/account-metrics`。
+- 详情页小时级趋势图做**定性**读取（形状描述+形态初判），作为 `curve_note` 存进
+  vision 快照；扩散诊断把它当作数字快照的旁证使用。
+- 采集节奏指南：`docs/capture-guide.md`（每条视频 +24h/+3天；每周列表+账号页各一张；
+  无需整理文件夹）。
 - 独立的暗色主题 HTML 账号报告（`GET /api/report`，`?download=1` 下载），只渲染已缓存分析，
   不产生新的 API 费用。
 - Dashboard：带 logo/统计/操作入口的 hero 首屏、单视频指标对基线面板、快照扩散曲线图、

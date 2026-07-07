@@ -136,21 +136,31 @@ def _extract_json(text: str) -> str:
     return t
 
 
-def call_claude_json(system: str, user_content: str, schema: dict | None = None) -> dict:
+def call_claude_json(system: str, user_content: str, schema: dict | None = None,
+                     images: list[tuple[str, str]] | None = None) -> dict:
     """
     调用 Claude 拿结构化结果。
 
     - 传 schema 时用工具强制 JSON（tool_choice 指定 emit_result），模型只能按 schema
       提交参数，从结构上消灭"JSON 前后多写说明文字"导致的解析失败。
+    - 传 images（[(media_type, base64), ...]）时走 vision：图片块在前、文字在后。
     - API 层错误（key 失效/限流/网络）不再往上抛 500，而是返回
       {"_api_error": 人话, "retryable": bool}，由前端展示并提供重试。
     - 附带 _meta（模型/token 用量/耗时），save_result 会存进库，成本可查。
     """
+    if images:
+        content = [
+            {"type": "image",
+             "source": {"type": "base64", "media_type": mt, "data": b64}}
+            for mt, b64 in images
+        ] + [{"type": "text", "text": user_content}]
+    else:
+        content = user_content
     kwargs = dict(
         model=MODEL,
         max_tokens=3000,
         system=system,
-        messages=[{"role": "user", "content": user_content}],
+        messages=[{"role": "user", "content": content}],
     )
     if schema is not None:
         kwargs["tools"] = [{

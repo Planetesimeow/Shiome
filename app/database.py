@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS videos (
     music TEXT,                          -- 配乐
     hook_description TEXT,               -- 核心抓人点
     content_pillar TEXT,                 -- 内容方向标签，比如"体态反差"/"买车避坑"
+    -- 以下字段来自创作者中心页面（截图 vision 提取），导出文件里没有
+    danmaku_count INTEGER,               -- 弹幕量
+    cover_ctr REAL,                      -- 封面点击率 0-1
+    bounce_2s_rate REAL,                 -- 2s跳出率 0-1
+    unfollows INTEGER,                   -- 取关量
+    fan_conversion_rate REAL,            -- 粉丝转化点击/提及占比 0-1
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -77,7 +83,32 @@ CREATE TABLE IF NOT EXISTS video_snapshots (
     completion_rate REAL,
     profile_visits INTEGER,
     new_followers INTEGER,
+    bounce_2s_rate REAL,                 -- 2s跳出率 0-1（详情页可见）
+    source TEXT DEFAULT 'manual',        -- manual=手动表单 / vision=截图提取
+    curve_note TEXT,                     -- vision 对详情页小时级趋势图形状的定性描述
     FOREIGN KEY(video_id) REFERENCES videos(id)
+);
+
+-- 账号级指标（数据表现 / 账号诊断 / 手机端数据中心 的截图落这里）。
+-- 主页访问、作品搜索量、同行百分位这些只在账号级存在，没法挂到单条视频上。
+CREATE TABLE IF NOT EXISTS account_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    captured_at TEXT NOT NULL,           -- 截图确认入库的时间
+    period TEXT,                         -- 统计口径：昨日/近7天/近30天/unknown
+    plays INTEGER,
+    profile_visits INTEGER,              -- 主页访问（账号级独有）
+    likes INTEGER,
+    comments INTEGER,
+    shares INTEGER,
+    net_followers INTEGER,               -- 净增粉丝
+    unfollows INTEGER,                   -- 取关粉丝
+    completion_rate REAL,                -- 账号级完播率 0-1
+    search_views INTEGER,                -- 作品搜索（搜索带来的量，账号级独有）
+    cover_ctr REAL,                      -- 封面点击率 0-1
+    danmaku INTEGER,
+    peer_percentiles TEXT,               -- JSON：同类创作者百分位（账号诊断页）
+    raw_json TEXT,                       -- 提取原文备份
+    source TEXT DEFAULT 'vision'
 );
 """
 
@@ -94,6 +125,15 @@ MIGRATIONS = [
     "ALTER TABLE analysis_results ADD COLUMN input_tokens INTEGER",
     "ALTER TABLE analysis_results ADD COLUMN output_tokens INTEGER",
     "ALTER TABLE analysis_results ADD COLUMN duration_ms INTEGER",
+    # vision 截图提取新增的页面级字段
+    "ALTER TABLE videos ADD COLUMN danmaku_count INTEGER",
+    "ALTER TABLE videos ADD COLUMN cover_ctr REAL",
+    "ALTER TABLE videos ADD COLUMN bounce_2s_rate REAL",
+    "ALTER TABLE videos ADD COLUMN unfollows INTEGER",
+    "ALTER TABLE videos ADD COLUMN fan_conversion_rate REAL",
+    "ALTER TABLE video_snapshots ADD COLUMN bounce_2s_rate REAL",
+    "ALTER TABLE video_snapshots ADD COLUMN source TEXT DEFAULT 'manual'",
+    "ALTER TABLE video_snapshots ADD COLUMN curve_note TEXT",
 ]
 
 

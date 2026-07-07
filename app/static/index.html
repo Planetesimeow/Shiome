@@ -11,6 +11,7 @@
 <body>
 
 <input type="file" id="csv-input" accept=".csv" hidden>
+<input type="file" id="shot-input" accept="image/*" multiple hidden>
 
 <header>
   <div class="brand-wrap" onclick="showOverview()" title="返回账号总览">
@@ -19,6 +20,7 @@
   </div>
   <div class="header-actions">
     <span class="status" id="status-line">加载中...</span>
+    <label class="btn-ghost" for="shot-input">上传截图</label>
     <label class="btn-ghost" for="csv-input">导入 CSV</label>
     <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出报告</a>
   </div>
@@ -44,11 +46,14 @@
         <div class="hstat"><div class="label">基线完播</div><div class="value" id="hs-completion">--</div></div>
       </div>
       <div class="hero-actions">
-        <label class="primary" for="csv-input">导入创作者中心 CSV</label>
+        <label class="primary" for="shot-input">上传创作者中心截图</label>
+        <label class="btn-ghost" for="csv-input">导入 CSV</label>
         <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出分析报告</a>
       </div>
-      <p class="hero-hint">从左侧选择一条视频，进入五个维度的分析</p>
+      <p class="hero-hint">手机/电脑截图都行 · 提取后需你确认才入库 · 私密视频自动跳过</p>
     </div>
+
+    <div id="vision-panel" style="display:none;"></div>
 
     <div class="chart-wrap">
       <div class="chart-title">播放量 &amp; 完播率趋势</div>
