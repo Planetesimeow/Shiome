@@ -1,104 +1,168 @@
 # 潮目 Shiome
 
-「潮目」指两股海流交汇形成的分界线，渔民靠它判断鱼群聚集点；日语里也常用"潮目が変わる"形容趋势转折的那一刻。这套工具做的就是这件事——在数据还没明显之前，先读出流量池要不要晋级、内容方向要不要调的那条分界线。
+> Read the turning point before the data makes it obvious.
+> 在数据显现之前，先读出趋势转折的那条分界线。
 
-一个人跑的小工具：录入视频数据 → 三个独立的分析维度（增强方向 / 内容建议 / 流量预估）→ 一个本地网页看结果。设计上刻意做成"能跑起来的骨架"而不是成品，接下来建议用Claude Code 继续在这个基础上迭代。
+**Shiome** (潮目) is the boundary line where two ocean currents meet — where fish gather, and in Japanese, *shiome ga kawaru* (潮目が変わる) means "the tide turns." Shiome is a single-operator analytics tool for Douyin (抖音) creators: feed it your video metrics, and it runs several independent AI analyses to help you decide, earlier than raw numbers would tell you, whether a video is about to break into a higher traffic pool and whether your content direction needs to change.
 
-## 架构
+It is deliberately a **runnable skeleton**, not a finished product — a base to keep iterating on with Claude Code.
+
+---
+
+## English
+
+### Features
+
+Five independent analysis dimensions, each its own prompt/module:
+
+| Dimension | Module | What it answers |
+|---|---|---|
+| Enhancement direction | `analysis/enhancement.py` | Per-video editing suggestions |
+| Content ideas | `analysis/content_ideas.py` | Account-level topic suggestions (looking forward) |
+| Trend forecast | `analysis/trend_forecast.py` | Heuristic traffic-trend inference (**not** a platform prediction) |
+| Pool diagnosis | `analysis/pool_diagnosis.py` | Which traffic-pool tier a video is in and what's blocking the next (needs snapshots) |
+| Creator profile | `analysis/creator_profile.py` | An audit of what your content is actually doing (looking in the mirror) |
+
+They run separately on purpose — each needs different input and judgment logic, and separating them lets you iterate on one without disturbing the others.
+
+### Architecture
 
 ```
-创作者中心导出 CSV ──▶ 导入 (app/ingestion.py) ──▶ SQLite (app/database.py)
-                                                        │
-                                          ┌─────────────┼─────────────┐
-                                          ▼             ▼             ▼
-                                    增强方向分析     内容建议分析    流量预估分析
-                                  (analysis/enhancement) (content_ideas) (trend_forecast)
-                                          │             │             │
-                                          └──────调用 Anthropic API────┘
+Creator-center CSV ──▶ Ingestion ──▶ SQLite ──▶ 5 analysis modules ──▶ Anthropic API
                                                         │
                                                         ▼
-                                          FastAPI (app/main.py) ──▶ 本地网页 dashboard
+                                       FastAPI ──▶ local web dashboard
 ```
 
-**为什么三个分析分开跑而不是一个大 prompt**：单条视频的剪辑建议、账号级的选题建议、流量趋势推断，需要的输入数据和判断逻辑都不一样，混在一起容易互相干扰、prompt 也会越写越乱。分开之后你也可以单独迭代某一类分析的效果，不用改动其他两个。
-
-**关于"流量预估"要老实说清楚的一点**：抖音不对外开放推荐算法数据，这里做不到真正意义上的"平台预测"。`trend_forecast.py` 里做的是基于账号历史推流规律的启发式推断，prompt 强制要求带置信度和免责说明。别把它当成有把握的预测来用。
-
-## 快速开始
+### Quick start
 
 ```bash
-cd douyin-analytics
+git clone git@github.com:Planetesimeow/Shiome.git
+cd Shiome
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # 填入你的 ANTHROPIC_API_KEY
+cp .env.example .env        # fill in your ANTHROPIC_API_KEY
 uvicorn app.main:app --reload
 ```
 
-打开 http://localhost:8000
+Then open http://localhost:8000
 
-## 数据怎么进来
+**Configuration** (`.env`): `ANTHROPIC_API_KEY` is required; `ANALYSIS_MODEL` is an optional override for the model used.
 
-抖音创作者中心没有 API，两条路：
+### Getting data in
 
-1. **CSV 导入**（推荐）：创作者中心 → 数据 → 导出，然后在网页左上角上传。`app/ingestion.py` 里的 `COLUMN_ALIASES` 做了常见表头的模糊匹配，如果导入报错说找不到列，去那个字典里加上你实际导出文件的表头文字就行。
-2. **手动录入**：截图数据不建议做 OCR 转录——涉及决策的数字，宁可手动确认一次。骨架里 `POST /api/videos` 这个接口已经能收单条数据，网页表单还没做，这是接下来可以让 Claude Code 补的一块。
+Douyin's creator center has no API — and its export file carries only account-level daily plays — so:
 
-## 异常期怎么处理
+1. **Screenshot upload** (recommended) — screenshot creator-center pages (phone or PC), upload on the dashboard; Claude vision extracts a draft you confirm before saving. Private (私密) videos are skipped automatically. Capture cadence & tips: [docs/capture-guide.md](docs/capture-guide.md).
+2. **CSV import** — Creator center → Data → Export, then upload it on the web page. `app/ingestion.py`'s `COLUMN_ALIASES` fuzzy-matches common headers; if an import can't find a column, add your file's header text to that dict.
+3. **Manual entry** — the `POST /api/videos` endpoint accepts one record at a time (a web form for this is not built yet).
 
-`POST /api/anomaly-periods` 记录一段日期区间和原因（比如"新号 IP+地理标签触发限流"）。
-落在区间内的视频会被标记 `is_anomaly_period=1`，三个分析模块计算基线时都会自动排除这些视频，不会被异常期的数据拉低整体判断。趋势图上这些点会用红色三角高亮，而不是直接从图上消失——保留可见性，方便你自己复核。
+Two dimensions (pool diagnosis, creator profile) need extra manual data — time snapshots and content descriptions — enterable via the panel on the right of the dashboard, or the `POST /api/videos/{id}/snapshots` and `PATCH /api/videos/{id}/content-profile` endpoints.
 
-## 平台机制参考框架
-
-`app/analysis/prompts.py` 里有一段 `PLATFORM_MECHANISM_CONTEXT`，把抖音/小红书推荐机制的经验规律（流量池分级、限流曲线 vs 自然衰减曲线的区别、账号标签漂移等）写成了参考框架，`enhancement.py` 和 `trend_forecast.py` 都会带上这段。
-
-刻意没做的事：没把里面的具体数字（比如"45%完播率""3.5%点赞比"）当成硬性判据去对比，因为这些是泛娱乐大盘的经验值，直接套用会跟这个账号"精准触达 > 泛量增长"的目标冲突。现在的用法是让模型识别曲线"形状像哪种模式"，不是用来打分及格线。
-
-也刻意没加时间序列快照（发布后1小时/24小时/3天分别是多少）——这是能让"流量趋势预估"真正对齐平台机制里"爬升速度"逻辑的关键数据，但代价是你得定时手动去创作者中心查数字。现在 `trend_forecast.py` 的 prompt 里已经如实告诉模型："你只有终态数据，没有时序曲线，只能做粗略推断"，不会假装自己看得到发布后每小时的曲线。如果之后想要更准的趋势判断，这个是第一优先该加的数据，加的时候要在 `videos` 表之外新建一张`video_snapshots(video_id, checked_at, plays, likes, comments, saves)` 表。
-
-## 流量池定位 & 内容创作者画像
-
-在原来三个分析维度上加了两个：
-
-**流量池定位** (`pool_diagnosis.py`)：判断这条视频现在大概在哪一级流量池、卡在哪个指标、要过这一关该做什么剪辑改动。前提是要有 `video_snapshots` 时间快照——判断"在哪一级、爬升速度怎么样"天生需要看曲线，终态数字回答不了这个问题。快照要靠你自己在固定时间点（比如发布后1小时、24小时、3天）手动查一次创作者中心，在网页里"记录一次快照"。快照数量不足2个时，分析会如实说置信度低，不会硬造一个确定的判断。
-
-**内容创作者画像** (`creator_profile.py`)：不看播放数据，看的是内容本身——最近这批视频实际在做什么方向、反复用的钩子模式、文字/配乐风格，以及内容矩阵结构是否健康（信任建立类 vs 转化触发类内容的比例）。这是账号级的审计，跟 `content_ideas.py`分工不同：content_ideas 回答"接下来该做什么新内容"（往前看），creator_profile回答"现在实际在做什么"（照镜子看现状）。
-
-这两个都需要额外的手动数据：
-- 流量池定位需要快照，网页右侧"内容画像 & 快照记录"里有个小表单，填播放/点赞/评论/收藏/完播率，点一下"记录快照"就行
-- 创作者画像需要内容描述字段（内容简述、画面文字、配乐、核心抓人点、内容方向标签），同一个面板里也有表单，保存后会存进 `videos` 表对应字段
-
-如果表单太麻烦，也可以自己维护一份 md 文档手动填，再通过 `PATCH /api/videos/{id}/content-profile` 和 `POST /api/videos/{id}/snapshots` 这两个接口批量导入——`ingestion.py`现在只处理了创作者中心的 CSV，这块批量导入脚本还没写，可以用 Claude Code 接着补。
-
-## 关于以后要挂服务器 + 手机远程录入
-
-现在这个骨架是本地单机版：SQLite 单文件、没有鉴权、没有多用户隔离。如果以后要把它放到服务器上，让手机远程发图片/指令过去后台记录，至少要补这几块，都还没做：
-- 鉴权（哪怕最简单的一个 API token 校验也行，不能裸奔在公网上）
-- 图片识别/解析这条链路——手机发截图过去，要有个环节把截图变成结构化数据存进`videos` 或 `video_snapshots` 表，这可能是 Claude 的 vision 能力，也可能是你自己确认后再落库，看你要多少人工校验环节
-- 一个能接收"图片 + 指令"这种消息形态的入口，现在的网页表单默认是同步操作，异步的"发过去、后台处理、之后来看"这种模式需要一个任务队列或者至少一个状态字段（处理中/已完成/需要确认）
-
-这块先不建，等本地这套跑顺了、数据模型稳定了再动，不然现在改还是走查数据的路径，到时候接入手机端可能还要再调整一轮。
-
-## 目前这个骨架没做、但值得优先补的
-
-- **评论/私信意向分级**：现在 `high_intent_comments` / `high_intent_dms` 是两个数字字段，靠你自己数出来填。更好的做法是把评论原文也存进来，让 Claude 帮你按意向强度分类打标——这个可以做成第四个分析模块。
-- **内容风控关键词库**：`content_ideas.py` 里已经让模型注意资产/身份/大额消费这类措辞风险，但只是 prompt 层面的提醒，没有一个可维护的敏感词库去主动扫描已发布内容。
-- **视频录入表单**：目前手动录入只有 API，没有网页表单。
-- **CSV 表头映射**：创作者中心导出格式过一段时间可能会变，`COLUMN_ALIASES`需要你根据自己实际导出的文件核对一遍。
-- **鉴权**：现在是纯本地跑，没做登录。如果以后要部署到能远程访问的地方，这个必须补上。
-
-## 目录结构
+### Project structure
 
 ```
 app/
-  main.py              FastAPI 路由
-  database.py          SQLite schema
-  models.py            Pydantic 请求/响应模型
-  ingestion.py         CSV 导入 + 表头模糊匹配
-  analysis/
-    prompts.py         账号人设上下文、基线计算、调用 Claude 的公共方法
-    enhancement.py      维度一：单条视频增强方向
-    content_ideas.py    维度二：账号级内容选题建议
-    trend_forecast.py   维度三：流量趋势启发式推断
-  static/              前端（原生 HTML/JS + Chart.js，没有构建步骤，方便直接改）
+  main.py            FastAPI routes
+  database.py        SQLite schema
+  models.py          Pydantic request/response models
+  ingestion.py       CSV import + fuzzy header matching
+  analysis/          the five analysis modules + shared prompt helpers
+  static/            frontend (vanilla HTML/JS + Chart.js, no build step)
 ```
+
+### Status & roadmap
+
+This is an early skeleton. Not yet built (contributions/iterations welcome): a web form for video entry, comment/DM intent grading, a maintainable content-risk keyword library, batch-import scripts, and authentication (**required before any remote deployment** — it currently runs with no login).
+
+### Design rationale
+
+The "why it's built this way" reasoning — separated analyses, honesty about trend forecasting, anomaly-period handling, the platform-mechanism reference framework, and future server/mobile plans — lives in **[MEMO.md](MEMO.md)**.
+
+### Changelog
+
+See **[CHANGELOG.md](CHANGELOG.md)** for version history.
+
+### License
+
+No license yet — until one is added, all rights are reserved and others have no legal right to reuse the code.
+
+---
+
+## 中文
+
+### 功能
+
+五个独立的分析维度，每个都是独立的 prompt/模块：
+
+| 维度 | 模块 | 回答什么 |
+|---|---|---|
+| 增强方向 | `analysis/enhancement.py` | 单条视频的剪辑建议 |
+| 内容建议 | `analysis/content_ideas.py` | 账号级选题建议（往前看） |
+| 流量预估 | `analysis/trend_forecast.py` | 流量趋势启发式推断（**不是**平台预测） |
+| 流量池定位 | `analysis/pool_diagnosis.py` | 视频在哪一级流量池、卡在哪、要过下一关做什么（需要快照） |
+| 内容创作者画像 | `analysis/creator_profile.py` | 审计内容实际在做什么（照镜子看现状） |
+
+它们刻意分开跑——各自需要的输入和判断逻辑不同，分开后可以单独迭代其中一个而不影响其他。
+
+### 架构
+
+```
+创作者中心 CSV ──▶ 导入 ──▶ SQLite ──▶ 五个分析模块 ──▶ Anthropic API
+                                              │
+                                              ▼
+                                 FastAPI ──▶ 本地网页 dashboard
+```
+
+### 快速开始
+
+```bash
+git clone git@github.com:Planetesimeow/Shiome.git
+cd Shiome
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env        # 填入你的 ANTHROPIC_API_KEY
+uvicorn app.main:app --reload
+```
+
+然后打开 http://localhost:8000
+
+**配置**（`.env`）：`ANTHROPIC_API_KEY` 必填；`ANALYSIS_MODEL` 是可选的模型覆盖项。
+
+### 数据怎么进来
+
+抖音创作者中心没有 API——导出文件也只有账号级"日期+播放量"两列——所以：
+
+1. **截图上传**（推荐）——手机/PC 截创作者中心页面，在 dashboard 上传；Claude vision 提取成草稿，你确认后才入库。私密视频自动跳过。采集节奏和技巧见 [docs/capture-guide.md](docs/capture-guide.md)。
+2. **CSV 导入**——创作者中心 → 数据 → 导出，然后在网页上上传。`app/ingestion.py` 的 `COLUMN_ALIASES` 会对常见表头做模糊匹配；如果导入找不到某列，把你文件里的表头文字加进那个字典即可。
+3. **手动录入**——`POST /api/videos` 接口一次收一条数据（对应的网页表单还没做）。
+
+有两个维度（流量池定位、内容画像）需要额外的手动数据——时间快照和内容描述——可以在 dashboard 右侧面板录入，或用 `POST /api/videos/{id}/snapshots` 和 `PATCH /api/videos/{id}/content-profile` 接口。
+
+### 目录结构
+
+```
+app/
+  main.py            FastAPI 路由
+  database.py        SQLite schema
+  models.py          Pydantic 请求/响应模型
+  ingestion.py       CSV 导入 + 表头模糊匹配
+  analysis/          五个分析模块 + 公共 prompt 辅助
+  static/            前端（原生 HTML/JS + Chart.js，无构建步骤）
+```
+
+### 现状 & 路线图
+
+这是一个早期骨架。尚未实现（欢迎迭代/贡献）：视频录入的网页表单、评论/私信意向分级、可维护的内容风控关键词库、批量导入脚本，以及鉴权（**远程部署前必须补上**——目前无任何登录）。
+
+### 设计思路
+
+"为什么这么设计"的推理——分析为何分开、对流量预估的诚实说明、异常期处理、平台机制参考框架，以及未来服务器/手机端计划——都在 **[MEMO.md](MEMO.md)**。
+
+### 更新记录
+
+版本历史见 **[CHANGELOG.md](CHANGELOG.md)**。
+
+### 许可
+
+暂无许可证——在添加许可证之前，保留所有权利，他人没有合法权利复用本代码。

@@ -9,6 +9,19 @@ app/data/
 *.sqlite
 *.sqlite3
 
+# Test artifacts — never upload test results (dated *_Test files live here)
+test_output/
+
+# Source logo originals (~4MB); app serves the small processed copies in app/static/img/
+/image/
+
+# Real account data — creator-center exports & screenshots dropped in for analysis/design
+data_inbox/
+reference/
+videodata/
+*.xlsx
+*.xls
+
 # Python
 __pycache__/
 *.py[cod]
@@ -16,6 +29,10 @@ __pycache__/
 .venv/
 venv/
 .env/
+
+# Local working agreement for AI collaborators — stays local, not public docs
+CLAUDE.md
+CLAUDE.local.md
 
 # OS / editor junk
 .DS_Store

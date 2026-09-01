@@ -1,0 +1,86 @@
+{
+  "_note": "数据驱动 API 冒烟测试的输入数据（'数据插槽'）。改这里就能换测试数据，不用动 tests/api_smoke_test.py。",
+  "anomaly_periods": [
+    {
+      "start_date": "2026-03-01",
+      "end_date": "2026-03-07",
+      "reason": "冒烟测试：模拟新号 IP+地理标签触发限流异常期"
+    }
+  ],
+  "videos": [
+    {
+      "video": {
+        "platform": "douyin",
+        "douyin_video_id": "SMOKE-001",
+        "title": "冒烟·体态反差开场A",
+        "publish_date": "2026-04-02",
+        "duration_sec": 33,
+        "plays": 41000,
+        "likes": 1500,
+        "comments": 320,
+        "shares": 210,
+        "saves": 880,
+        "completion_rate": 0.47,
+        "avg_watch_time": 22.0,
+        "profile_visits": 1700,
+        "new_followers": 250,
+        "high_intent_comments": 38,
+        "high_intent_dms": 11,
+        "notes": "冒烟测试样本，健康爬升"
+      },
+      "content_profile": {
+        "content_summary": "开场体型反差，中段热量/宏量数据，结尾自嘲",
+        "on_screen_text": "3个月 -8kg｜每天多算这一步",
+        "music": "轻鼓点 up-tempo",
+        "hook_description": "前2秒体型反差画面",
+        "content_pillar": "体态反差"
+      },
+      "snapshots": [
+        {"checked_at": "2026-04-02T12:00:00", "plays": 800, "likes": 40, "comments": 12, "shares": 6, "saves": 30, "completion_rate": 0.50, "profile_visits": 60, "new_followers": 10},
+        {"checked_at": "2026-04-03T11:00:00", "plays": 12000, "likes": 500, "comments": 120, "shares": 80, "saves": 350, "completion_rate": 0.49, "profile_visits": 700, "new_followers": 110},
+        {"checked_at": "2026-04-05T11:00:00", "plays": 41000, "likes": 1500, "comments": 320, "shares": 210, "saves": 880, "completion_rate": 0.47, "profile_visits": 1700, "new_followers": 250}
+      ]
+    },
+    {
+      "video": {
+        "title": "冒烟·高播放低意向B",
+        "publish_date": "2026-04-08",
+        "duration_sec": 41,
+        "plays": 90000,
+        "likes": 3100,
+        "comments": 85,
+        "shares": 55,
+        "saves": 300,
+        "completion_rate": 0.56,
+        "avg_watch_time": 18.0,
+        "profile_visits": 380,
+        "new_followers": 28,
+        "high_intent_comments": 3,
+        "high_intent_dms": 1
+      },
+      "content_profile": {
+        "content_summary": "便利店午餐逐个算热量，节奏快",
+        "hook_description": "悬念式提问'哪个更肥'",
+        "content_pillar": "系统感数据"
+      },
+      "snapshots": []
+    },
+    {
+      "video": {
+        "title": "冒烟·异常期样本C",
+        "publish_date": "2026-03-04",
+        "plays": 620,
+        "likes": 22,
+        "comments": 5,
+        "shares": 2,
+        "saves": 14,
+        "completion_rate": 0.40,
+        "profile_visits": 33,
+        "new_followers": 3,
+        "high_intent_comments": 2,
+        "high_intent_dms": 1
+      },
+      "snapshots": []
+    }
+  ]
+}

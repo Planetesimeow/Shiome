@@ -18,15 +18,32 @@ SYSTEM_PROMPT = f"""
   不要建议偏离人设的泛娱乐内容。
 - 目标人群窄且高净值，选题要考虑"能不能筛选出对咨询服务有真实需求的人"，
   而不是单纯追求泛流量。
-- 只返回 JSON，不要任何其他文字，格式：
-{{
-  "high_performing_patterns": ["从数据里看出的、跑通了的内容模式"],
-  "new_content_ideas": [
-    {{"angle": "选题角度", "why": "为什么可能有效", "risk_note": "如果涉及敏感表述，这里给更安全的说法；否则填 null"}}
-  ],
-  "patterns_to_retire": ["表现持续低于基线、可以减少投入的内容类型"]
-}}
 """
+
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "high_performing_patterns": {"type": "array", "items": {"type": "string"},
+                                     "description": "从数据里看出的、跑通了的内容模式"},
+        "new_content_ideas": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "angle": {"type": "string", "description": "选题角度"},
+                    "why": {"type": "string", "description": "为什么可能有效"},
+                    "risk_note": {"type": ["string", "null"],
+                                  "description": "如果涉及敏感表述，这里给更安全的说法；否则填 null"},
+                },
+                "required": ["angle", "why", "risk_note"],
+            },
+        },
+        "patterns_to_retire": {"type": "array", "items": {"type": "string"},
+                               "description": "表现持续低于基线、可以减少投入的内容类型"},
+    },
+    "required": ["high_performing_patterns", "new_content_ideas", "patterns_to_retire"],
+}
 
 
 def analyze_content_ideas(recent_videos: list[dict], baseline: dict) -> dict:
@@ -39,6 +56,6 @@ def analyze_content_ideas(recent_videos: list[dict], baseline: dict) -> dict:
 
 请给出内容方向建议。
 """
-    result = call_claude_json(SYSTEM_PROMPT, user_content)
+    result = call_claude_json(SYSTEM_PROMPT, user_content, schema=OUTPUT_SCHEMA)
     save_result(None, "content_ideas", result)
     return result
