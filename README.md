@@ -79,13 +79,16 @@ This is an early skeleton. Not yet built (contributions/iterations welcome): a w
 
 The "why it's built this way" reasoning — separated analyses, honesty about trend forecasting, anomaly-period handling, the platform-mechanism reference framework, and future server/mobile plans — lives in **[MEMO.md](MEMO.md)**.
 
+Where it's going next, and why: **[docs/roadmap-v2.md](docs/roadmap-v2.md)**.
+What changed and what it meant, written as it happened: **[docs/devlog/](docs/devlog/)**.
+
 ### Changelog
 
 See **[CHANGELOG.md](CHANGELOG.md)** for version history.
 
 ### License
 
-No license yet — until one is added, all rights are reserved and others have no legal right to reuse the code.
+MIT — see **[LICENSE](LICENSE)**. Use it, fork it, learn from it.
 
 ---
 
@@ -159,10 +162,13 @@ app/
 
 "为什么这么设计"的推理——分析为何分开、对流量预估的诚实说明、异常期处理、平台机制参考框架，以及未来服务器/手机端计划——都在 **[MEMO.md](MEMO.md)**。
 
+接下来往哪走、为什么：**[docs/roadmap-v2.md](docs/roadmap-v2.md)**。
+每一步改了什么、意味着什么（边做边写）：**[docs/devlog/](docs/devlog/)**。
+
 ### 更新记录
 
 版本历史见 **[CHANGELOG.md](CHANGELOG.md)**。
 
 ### 许可
 
-暂无许可证——在添加许可证之前，保留所有权利，他人没有合法权利复用本代码。
+MIT——见 **[LICENSE](LICENSE)**。随便用、随便 fork、随便参考。
