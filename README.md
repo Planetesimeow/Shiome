@@ -20,7 +20,7 @@ Five independent analysis dimensions, each its own prompt/module:
 | Enhancement direction | `analysis/enhancement.py` | Per-video editing suggestions |
 | Content ideas | `analysis/content_ideas.py` | Account-level topic suggestions (looking forward) |
 | Trend forecast | `analysis/trend_forecast.py` | Heuristic traffic-trend inference (**not** a platform prediction) |
-| Pool diagnosis | `analysis/pool_diagnosis.py` | Which traffic-pool tier a video is in and what's blocking the next (needs snapshots) |
+| Diffusion diagnosis | `analysis/pool_diagnosis.py` | What shape the diffusion curve has and which signal is holding it back (needs snapshots) |
 | Creator profile | `analysis/creator_profile.py` | An audit of what your content is actually doing (looking in the mirror) |
 
 They run separately on purpose — each needs different input and judgment logic, and separating them lets you iterate on one without disturbing the others.
@@ -55,21 +55,49 @@ Douyin's creator center has no API — and its export file carries only account-
 
 1. **Screenshot upload** (recommended) — screenshot creator-center pages (phone or PC), upload on the dashboard; Claude vision extracts a draft you confirm before saving. Private (私密) videos are skipped automatically. Capture cadence & tips: [docs/capture-guide.md](docs/capture-guide.md).
 2. **CSV import** — Creator center → Data → Export, then upload it on the web page. `app/ingestion.py`'s `COLUMN_ALIASES` fuzzy-matches common headers; if an import can't find a column, add your file's header text to that dict.
-3. **Manual entry** — the `POST /api/videos` endpoint accepts one record at a time (a web form for this is not built yet).
+3. **Manual entry** — the `POST /api/posts` endpoint accepts one record at a time (a web form for this is not built yet).
 
-Two dimensions (pool diagnosis, creator profile) need extra manual data — time snapshots and content descriptions — enterable via the panel on the right of the dashboard, or the `POST /api/videos/{id}/snapshots` and `PATCH /api/videos/{id}/content-profile` endpoints.
+Two dimensions (diffusion diagnosis, creator profile) need extra manual data — time snapshots and content descriptions — enterable via the panel on the right of the dashboard, or the `POST /api/posts/{id}/snapshots` and `PATCH /api/posts/{id}/content-profile` endpoints. Content descriptions are stored on the **creative**, not the post, so a video published to several platforms is described once.
 
 ### Project structure
 
 ```
 app/
   main.py            FastAPI routes
-  database.py        SQLite schema
+  database.py        SQLite schema — accounts / creatives / posts / post_snapshots
+  migrations.py      v1 -> v2 structural migration (non-destructive)
   models.py          Pydantic request/response models
   ingestion.py       CSV import + fuzzy header matching
-  analysis/          the five analysis modules + shared prompt helpers
+  dedupe.py          duplicate detection + confirmed merge
+  report.py          self-contained HTML report
+  vision.py          screenshot -> structured draft
+  analysis/
+    prompts.py       account context, platform mechanism frameworks, Claude helper
+    context.py       "what do we know about this creator" — shared by all analyses
+    registry.py      the five analyses declared once (routes + future assistant)
+    *.py             the five analysis modules
   static/            frontend (vanilla HTML/JS + Chart.js, no build step)
+tests/               pytest suite; `pytest` runs the free ones
 ```
+
+**A creative is not a post.** A *creative* is the thing you made (hook, on-screen text,
+music, content pillar). A *post* is that creative published to one platform, carrying the
+numbers that platform measured. One video published to three platforms is one creative and
+three posts — which is why the content profile only gets typed once. See
+[docs/roadmap-v2.md](docs/roadmap-v2.md) for why.
+
+### Running the tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests never touch your real database — every test runs against a throwaway file and
+asserts it is not under `app/data/`. Analysis tests that call the Anthropic API are
+excluded by default (a `costs_money` marker plus an env gate), so `pytest` never spends
+money. To run them deliberately:
+`SHIOME_TEST_WITH_ANALYSIS=1 ANTHROPIC_API_KEY=... pytest -m costs_money`
 
 ### Status & roadmap
 
@@ -103,7 +131,7 @@ MIT — see **[LICENSE](LICENSE)**. Use it, fork it, learn from it.
 | 增强方向 | `analysis/enhancement.py` | 单条视频的剪辑建议 |
 | 内容建议 | `analysis/content_ideas.py` | 账号级选题建议（往前看） |
 | 流量预估 | `analysis/trend_forecast.py` | 流量趋势启发式推断（**不是**平台预测） |
-| 流量池定位 | `analysis/pool_diagnosis.py` | 视频在哪一级流量池、卡在哪、要过下一关做什么（需要快照） |
+| 扩散诊断 | `analysis/pool_diagnosis.py` | 扩散曲线是什么形状、卡在哪个信号（需要快照） |
 | 内容创作者画像 | `analysis/creator_profile.py` | 审计内容实际在做什么（照镜子看现状） |
 
 它们刻意分开跑——各自需要的输入和判断逻辑不同，分开后可以单独迭代其中一个而不影响其他。
@@ -138,21 +166,47 @@ uvicorn app.main:app --reload
 
 1. **截图上传**（推荐）——手机/PC 截创作者中心页面，在 dashboard 上传；Claude vision 提取成草稿，你确认后才入库。私密视频自动跳过。采集节奏和技巧见 [docs/capture-guide.md](docs/capture-guide.md)。
 2. **CSV 导入**——创作者中心 → 数据 → 导出，然后在网页上上传。`app/ingestion.py` 的 `COLUMN_ALIASES` 会对常见表头做模糊匹配；如果导入找不到某列，把你文件里的表头文字加进那个字典即可。
-3. **手动录入**——`POST /api/videos` 接口一次收一条数据（对应的网页表单还没做）。
+3. **手动录入**——`POST /api/posts` 接口一次收一条数据（对应的网页表单还没做）。
 
-有两个维度（流量池定位、内容画像）需要额外的手动数据——时间快照和内容描述——可以在 dashboard 右侧面板录入，或用 `POST /api/videos/{id}/snapshots` 和 `PATCH /api/videos/{id}/content-profile` 接口。
+有两个维度（扩散诊断、内容画像）需要额外的手动数据——时间快照和内容描述——可以在 dashboard 右侧面板录入，或用 `POST /api/posts/{id}/snapshots` 和 `PATCH /api/posts/{id}/content-profile` 接口。内容描述存在 **creative（创作物）** 上而不是 post 上，所以一条内容发到多个平台只需要描述一次。
 
 ### 目录结构
 
 ```
 app/
   main.py            FastAPI 路由
-  database.py        SQLite schema
+  database.py        SQLite schema —— accounts / creatives / posts / post_snapshots
+  migrations.py      v1 → v2 结构迁移（不删数据）
   models.py          Pydantic 请求/响应模型
   ingestion.py       CSV 导入 + 表头模糊匹配
-  analysis/          五个分析模块 + 公共 prompt 辅助
+  dedupe.py          重复发现 + 确认后合并
+  report.py          自包含 HTML 报告
+  vision.py          截图 → 结构化草稿
+  analysis/
+    prompts.py       账号上下文、各平台机制框架、调 Claude 的公共方法
+    context.py       「关于这个创作者我们知道什么」—— 所有分析共用
+    registry.py      五个分析的一处声明（路由 + 将来的助手都读它）
+    *.py             五个分析模块
   static/            前端（原生 HTML/JS + Chart.js，无构建步骤）
+tests/               pytest 测试；直接跑 `pytest` 只跑不花钱的那些
 ```
+
+**creative 不是 post。** *creative（创作物）* 是你做出来的那个东西（钩子、画面文字、配乐、
+内容方向）；*post（发布）* 是那个创作物发到某一个平台上，带着那个平台量出来的数字。
+一条视频发三个平台 = 一个 creative + 三个 post —— 这就是内容画像只用填一次的原因。
+为什么这么设计见 [docs/roadmap-v2.md](docs/roadmap-v2.md)。
+
+### 跑测试
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+测试不会碰你的真实数据库——每个测试都跑在一次性文件上，并且会断言它不在 `app/data/` 下面。
+会调 Anthropic API 的分析类测试默认被排除（`costs_money` marker + 环境变量双保险），
+所以 `pytest` 永远不会花钱。确认要跑：
+`SHIOME_TEST_WITH_ANALYSIS=1 ANTHROPIC_API_KEY=... pytest -m costs_money`
 
 ### 现状 & 路线图
 

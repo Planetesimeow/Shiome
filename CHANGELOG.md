@@ -14,6 +14,48 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+**Breaking**
+- The `videos` table and every `/api/videos*` route are gone. A creative (what you made)
+  and a post (that creative published to one platform) are now separate: `accounts` /
+  `creatives` / `posts` / `post_snapshots`. Routes are `/api/posts*`, plus new
+  `/api/accounts`, `/api/creatives`, `/api/creator-notes`, and
+  `/api/analyze/posts/{id}/{type}` + `/api/analyze/account/{type}`. No compatibility
+  aliases — the only client was this repo's own frontend. Reasoning: `docs/roadmap-v2.md`.
+- Account persona moved out of `prompts.py` source onto `accounts.persona`. An account
+  with no persona now says so in the prompt instead of borrowing another account's.
+- The default database file is `app/data/shiome.db`. An existing `douyin.db` is copied
+  (not moved) on first launch; the v1 file is left untouched.
+
+**Fixed**
+- `compute_baseline` averaged across platforms, which would have made every "vs baseline"
+  delta meaningless as soon as a second platform existed. Now scoped per account.
+- The trend-forecast prompt hard-coded Douyin's "24 hours decides it" in shared code;
+  moved into the per-platform mechanism context, where it is true.
+- `content_ideas` and `creator_profile` received no platform at all.
+- Post identity matched on exact `(title, publish_date)`, so a truncated list-page title
+  and a full detail-page title created two rows. Now: platform post id first, then fuzzy
+  title within the same account and publish date.
+- `creator_profile` audited posts rather than creatives, which would have counted one
+  video once per platform and inflated the content-matrix proportions.
+- The exported HTML report called itself self-contained while loading Chart.js from a CDN.
+  The library is now embedded, so a downloaded report still renders offline.
+
+**Added**
+- Duplicate detection (`GET /api/posts/duplicate-candidates`) and confirmed merge
+  (`POST /api/posts/merge`), with a dashboard banner. Detection is automatic; merging is
+  not — it needs a click, like every other number that drives a decision.
+- Non-destructive v1 to v2 migration: tagged backup first, old tables renamed to
+  `_v1_*` rather than dropped, and only byte-identical rows collapsed automatically.
+- `creator_notes`, `conversations` and `messages` tables, `app/analysis/context.py` and
+  `app/analysis/registry.py` — the sockets for the Phase 5 conversational assistant. The
+  context and registry modules are used by the analyses today, not stubs.
+- `platform_data` JSON column on posts and snapshots for fields only one platform has.
+- MIT license, `docs/roadmap-v2.md`, and a public devlog at `docs/devlog/`.
+- pytest suite (62 tests) replacing the manual smoke script, plus GitHub Actions CI.
+  Analysis tests are double-gated so CI can never spend money.
+
+#### Earlier in this cycle
+
 **Added**
 - Vision ingest: upload creator-center screenshots (phone or PC — layout-agnostic) →
   Claude vision extracts a draft → confirm/edit in the dashboard → saved through the
@@ -73,6 +115,46 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+**破坏性变更**
+- `videos` 表和所有 `/api/videos*` 路由都没有了。creative（你做的东西）和 post（那个创作物
+  发到某个平台上）现在是分开的：`accounts` / `creatives` / `posts` / `post_snapshots`。
+  路由改为 `/api/posts*`，并新增 `/api/accounts`、`/api/creatives`、`/api/creator-notes`，
+  以及 `/api/analyze/posts/{id}/{type}` 和 `/api/analyze/account/{type}`。
+  没有保留兼容别名——唯一的调用方就是本仓库自己的前端。理由见 `docs/roadmap-v2.md`。
+- 账号人设从 `prompts.py` 源码搬到 `accounts.persona`。没填人设的账号会在 prompt 里如实说明，
+  而不是沿用别的账号的人设。
+- 默认数据库文件改为 `app/data/shiome.db`。已有的 `douyin.db` 会在首次启动时被**复制**
+  （不是移动）过去，v1 文件原地保留。
+
+**修复**
+- `compute_baseline` 跨平台求平均——一旦有第二个平台，dashboard 上每个「对基线 Δ」都会失去意义。
+  现在按账号隔离。
+- 流量预估的 prompt 把抖音的「24小时定生死」写死在共享代码里；移到按平台的机制上下文中，
+  在那里它才成立。
+- `content_ideas` 和 `creator_profile` 完全不接收平台参数。
+- 作品身份按 `(标题, 发布日期)` 精确匹配，于是列表页的截断标题和详情页的完整标题会建出两行。
+  现在：优先用平台侧作品 ID，其次在同账号同发布日期内做标题模糊匹配。
+- `creator_profile` 审计的是 post 而不是 creative——同一条内容发几个平台就会被数几遍，
+  内容矩阵占比会被平台数量放大成假象。
+- 导出的 HTML 报告自称「自包含」，却从 CDN 加载 Chart.js。现在库是内嵌的，
+  下载下来断网也能看到图。
+
+**新增**
+- 重复发现（`GET /api/posts/duplicate-candidates`）和确认后合并（`POST /api/posts/merge`），
+  dashboard 上有横幅提示。发现是自动的，合并不是——要点一下，
+  跟其他任何影响决策的数字一样。
+- 不删数据的 v1→v2 迁移：先打带标记的备份，旧表改名为 `_v1_*` 而不是 DROP，
+  只自动合并每个字段都完全相同的行。
+- `creator_notes`、`conversations`、`messages` 表，以及 `app/analysis/context.py`
+  和 `app/analysis/registry.py`——给 Phase 5 对话式助手留的插槽。
+  其中 context 和 registry 今天就在被分析模块使用，不是空壳。
+- posts 和快照上的 `platform_data` JSON 列，用于只有某一个平台才有的字段。
+- MIT 许可证、`docs/roadmap-v2.md`，以及 `docs/devlog/` 公开开发日志。
+- pytest 测试套件（62 个）取代手动冒烟脚本，加上 GitHub Actions CI。
+  分析类测试有双重保险，CI 不可能花到钱。
+
+#### 本周期更早的改动
 
 **新增**
 - 截图采集：上传创作者中心截图（手机/PC 排版均可）→ Claude vision 提取草稿 →

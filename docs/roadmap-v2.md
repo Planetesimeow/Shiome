@@ -109,6 +109,7 @@ Phase 1   auth → deploy → offsite backup → monthly budget cap
 Phase 2   mobile capture page, video → drafted content profile
 Phase 3   Xiaohongshu
 Phase 4   Bilibili + cross-platform comparison
+Phase 5   A conversational assistant that knows your data
 ```
 
 One hard constraint: **Phase 0 precedes the deploy.** Migrating a schema is dramatically
@@ -119,6 +120,38 @@ even though it is not itself a feature. The most expensive part of using Shiome 
 not taking screenshots — it is moving them from a phone to a laptop. That step only
 disappears when there is a server the phone can reach. Hosting is a prerequisite for the
 usability fix, not a finale.
+
+### Phase 5 — talking to it instead of reading it
+
+Every screen in Shiome today answers a question you have to already know how to ask.
+You pick a video, pick a tab, read a card. The thing a creator actually wants to say is
+closer to *"why did this one die?"* or *"should I keep making these?"* — and the answer
+usually needs several of those cards at once, plus context that is not on any screen,
+like what you were trying to do that week.
+
+So Phase 5 is a chat panel inside Shiome, talking to an assistant that already has your
+account's data, content profiles, snapshots, cached analyses, and your own written notes.
+Not a general chatbot with your data pasted in — an assistant whose default context *is*
+your account.
+
+Four sockets for it are already in place, built in Phase 0 while the schema was open:
+
+- **`conversations` / `messages` tables.** Conversations have to persist for the assistant
+  to remember anything, and adding tables is at its most expensive after deployment.
+- **`app/analysis/context.py`.** One place that assembles "what do we know about this
+  creator" — account, baseline, recent posts, creatives, account metrics, notes. The five
+  analyses use it today; the assistant uses the same function tomorrow. It is a real
+  abstraction in use, not a stub waiting for a feature.
+- **`app/analysis/registry.py`.** The five analyses are declared once, with scope and
+  description, instead of hard-coded into five routes. The routes read the registry now;
+  the assistant will read it to expose them as callable tools.
+- **`creator_notes`.** An assistant that only knows numbers cannot know that you are
+  thinking about pivoting toward car-buying content, or that a week felt off. Platforms
+  will never give you that. You have to write it down, so there is now somewhere to.
+
+It sits last because it is worth more once there is multi-platform data to reason across —
+but it does not depend on Bilibili, so it can move ahead of Phase 4 if it turns out to be
+the thing that gets used daily.
 
 ### Deliberately not doing yet
 
@@ -211,6 +244,7 @@ Phase 1   鉴权 → 部署 → 异地备份 → 每月预算上限
 Phase 2   手机采集页、视频 → 自动生成内容画像草稿
 Phase 3   小红书
 Phase 4   B站 + 跨平台对比
+Phase 5   懂你数据的对话式助手
 ```
 
 一个硬约束：**Phase 0 必须在部署之前。** 在还没有线上数据要迁移的时候改 schema，便宜得多。
@@ -218,6 +252,33 @@ Phase 4   B站 + 跨平台对比
 一个值得解释的调整：部署被排得很靠前，在采集体验改进之前，尽管它本身不是一个功能。今天用潮目
 最费劲的一步不是截图，而是把截图从手机搬到电脑。只有当存在一个手机能直接访问的服务器时，这一步
 才会消失。部署是易用性改进的**前置条件**，不是收尾。
+
+### Phase 5 —— 跟它说话，而不是读它
+
+今天潮目的每一个界面，回答的都是你必须已经知道该怎么问的问题：选一条视频、选一个 tab、
+读一张卡片。但创作者真正想说的话更接近「这条怎么就死了？」或者「这类还要不要继续做？」——
+而这种问题的答案通常要同时用到好几张卡片，还要用到界面上根本没有的上下文，
+比如你那一周本来想干什么。
+
+所以 Phase 5 是潮目里的一个对话面板，对面的助手已经拿着你账号的数据、内容画像、时序快照、
+已缓存的分析，以及你自己写下的想法。不是一个把数据粘贴进去的通用聊天机器人 ——
+而是一个默认上下文就是你这个账号的助手。
+
+它的四个插槽在 Phase 0 就已经装好了，趁 schema 还开着的时候：
+
+- **`conversations` / `messages` 表。** 助手要能记住上下文，对话就必须落库；
+  而加表最贵的时机是部署之后。
+- **`app/analysis/context.py`。** 一处组装「关于这个创作者，我们知道什么」——
+  账号、基线、近期作品、创作物、账号级指标、创作者笔记。五个分析今天就在用它，
+  助手明天用同一个函数。它是正在被使用的抽象，不是等着功能来填的空壳。
+- **`app/analysis/registry.py`。** 五个分析改成一处声明（带 scope 和描述），
+  而不是写死成五个路由。路由现在读它；助手将来读它，把这些分析当作可调用的工具列出来。
+- **`creator_notes`。** 一个只知道数字的助手，不可能知道你正在考虑转买车避坑方向，
+  也不知道你觉得这周推流不对劲。平台永远不会给你这些，只能你自己写下来 ——
+  所以现在有地方写了。
+
+它排在最后，是因为等有了多平台数据可以横向推理时它的价值更大；
+但它并不依赖 B站，所以如果它成了每天真正被用的那个东西，可以提到 Phase 4 前面。
 
 ### 刻意先不做的
 
