@@ -113,6 +113,7 @@ main {
 .video-list { list-style: none; margin: 0; padding: 0; }
 
 .video-row {
+  position: relative;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border);
   border-left: 2px solid transparent;
@@ -122,6 +123,24 @@ main {
   gap: 4px;
   transition: background 0.12s ease;
 }
+
+.row-delete {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: none;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.video-row:hover .row-delete { display: block; }
+.row-delete:hover { color: var(--danger); border-color: var(--danger); }
+.row-delete:disabled { opacity: 0.4; cursor: default; }
 
 .video-row:hover { background: var(--bg-hover); border-left-color: var(--text-muted); }
 .video-row.selected { background: var(--bg-elevated); border-left-color: var(--accent); }

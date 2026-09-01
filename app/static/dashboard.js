@@ -25,7 +25,8 @@ async function loadVideos() {
         <span>播放 ${formatNum(v.plays)}</span>
         <span>完播 ${completion}</span>
         ${v.is_anomaly_period ? '<span class="anomaly">● 异常期</span>' : ""}
-      </div>`;
+      </div>
+      <button class="row-delete" title="删除这条视频及其快照/分析" onclick="deleteVideo(event, ${v.id}, this)">✕</button>`;
     list.appendChild(li);
   }
   document.getElementById("status-line").textContent = `${state.videos.length} 条视频`;
@@ -53,6 +54,24 @@ function showOverview() {
   document.getElementById("detail-view").style.display = "none";
   document.getElementById("hero").style.display = "";
   loadVideos();
+}
+
+async function deleteVideo(event, id, btn) {
+  event.stopPropagation(); // 别触发行点击选中
+  const video = state.videos.find((v) => v.id === id);
+  if (!confirm(`删除「${video?.title ?? id}」？\n它的快照和分析结果会一起删除，不可恢复。`)) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/videos/${id}`, { method: "DELETE" });
+    document.getElementById("status-line").textContent = "已删除";
+    if (state.selectedId === id) showOverview();
+    else await loadVideos();
+    await loadTrendChart();
+    await loadHeroBaseline();
+  } catch (err) {
+    btn.disabled = false;
+    document.getElementById("status-line").textContent = "删除失败: " + err.message;
+  }
 }
 
 function formatNum(n) {

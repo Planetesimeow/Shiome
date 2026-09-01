@@ -13,9 +13,22 @@
   图表读数不可靠），给扩散诊断当"目击证词"用。
 """
 import io
+import os
+import json
+import time
 import base64
 
 from app.analysis.prompts import call_claude_json
+
+# ---- 提取用的模型插槽（与文本分析的 ANALYSIS_MODEL 解耦） ----
+# 提取截图是"读字"任务，对视觉能力要求高于文本分析；Haiku 级视觉在密集中文 UI 上不够稳。
+# VISION_PROVIDER: anthropic（默认）或 gemini；VISION_MODEL 可覆盖各自默认模型。
+VISION_PROVIDER = os.environ.get("VISION_PROVIDER", "anthropic").lower()
+_DEFAULT_VISION_MODEL = {
+    "anthropic": "claude-sonnet-4-6",   # 刻意高于分析用的 Haiku：读数错了后面全错
+    "gemini": "gemini-3.5-flash",
+}
+VISION_MODEL = os.environ.get("VISION_MODEL") or _DEFAULT_VISION_MODEL.get(VISION_PROVIDER, "claude-sonnet-4-6")
 
 # Claude vision 最佳输入：最长边 ≤1568px。手机原图 2-5MB，压过之后 token 减半以上。
 MAX_EDGE = 1568
@@ -138,12 +151,90 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
+USER_PROMPT = "请提取这张创作者中心截图里的全部可见数据。"
+
+
+def _gemini_schema(node):
+    """把 JSON Schema 转成 Gemini response_schema 兼容形态：
+    type 数组（["string","null"]）→ 单 type + nullable=True；其余键保留。"""
+    if isinstance(node, list):
+        return [_gemini_schema(x) for x in node]
+    if not isinstance(node, dict):
+        return node
+    out = {}
+    for k, v in node.items():
+        if k == "type" and isinstance(v, list):
+            non_null = [t for t in v if t != "null"]
+            out["type"] = non_null[0] if non_null else "string"
+            if "null" in v:
+                out["nullable"] = True
+        else:
+            out[k] = _gemini_schema(v)
+    # enum 里混进 None 会让 Gemini 校验报错（来自 ["昨日",...,None] 这类写法）
+    if "enum" in out and isinstance(out["enum"], list):
+        out["enum"] = [e for e in out["enum"] if e is not None]
+    return out
+
+
+def _extract_with_gemini(media_type: str, b64: str) -> dict:
+    """Gemini 路线：google-genai SDK + response_schema 强制 JSON。
+    错误统一包成与 Claude 路线相同的 {_api_error, retryable} 信封，前端无感知。"""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return {"_api_error": "VISION_PROVIDER=gemini 但没设 GEMINI_API_KEY（.env 里加上即可）",
+                "retryable": False}
+    try:
+        from google import genai
+        from google.genai import types as gtypes
+    except ImportError:
+        return {"_api_error": "缺少 google-genai 包：pip install google-genai", "retryable": False}
+
+    t0 = time.time()
+    try:
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(
+            model=VISION_MODEL,
+            contents=[
+                gtypes.Part.from_bytes(data=base64.standard_b64decode(b64), mime_type=media_type),
+                USER_PROMPT,
+            ],
+            config={
+                "system_instruction": SYSTEM_PROMPT,
+                "response_mime_type": "application/json",
+                "response_schema": _gemini_schema(EXTRACTION_SCHEMA),
+            },
+        )
+    except Exception as e:  # google-genai 的异常层级较散，统一按可重试与否粗分
+        msg = str(e)
+        retryable = any(x in msg for x in ("429", "500", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "timeout"))
+        return {"_api_error": f"Gemini API 错误：{msg[:300]}", "retryable": retryable}
+
+    um = getattr(resp, "usage_metadata", None)
+    meta = {
+        "model": VISION_MODEL,
+        "input_tokens": getattr(um, "prompt_token_count", None),
+        "output_tokens": getattr(um, "candidates_token_count", None),
+        "duration_ms": int((time.time() - t0) * 1000),
+    }
+    try:
+        result = json.loads(resp.text)
+    except (json.JSONDecodeError, TypeError):
+        return {"_parse_error": True, "raw_text": str(resp.text)[:2000], "_meta": meta}
+    if isinstance(result, dict):
+        result["_meta"] = meta
+    return result
+
+
 def extract_screenshot(file_bytes: bytes, content_type: str | None = None) -> dict:
-    """一张截图 → 结构化草稿 dict（带 _meta；失败返回 _api_error/_parse_error 信封）。"""
+    """一张截图 → 结构化草稿 dict（带 _meta；失败返回 _api_error/_parse_error 信封）。
+    提取模型由 VISION_PROVIDER / VISION_MODEL 决定，与文本分析模型解耦。"""
     media_type, b64 = prepare_image(file_bytes, content_type)
+    if VISION_PROVIDER == "gemini":
+        return _extract_with_gemini(media_type, b64)
     return call_claude_json(
         SYSTEM_PROMPT,
-        "请提取这张创作者中心截图里的全部可见数据。",
+        USER_PROMPT,
         schema=EXTRACTION_SCHEMA,
         images=[(media_type, b64)],
+        model=VISION_MODEL,
     )

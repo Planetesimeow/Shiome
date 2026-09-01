@@ -136,6 +136,16 @@ def run(with_analysis: bool):
               r.status_code == 200 and j.get("account_saved")
               and len(am) >= 1 and am[0].get("search_views") == 652, (r.text, am[:1]))
 
+        # 删除视频：连同快照/分析结果一起删，且列表里确实消失
+        del_target = next(v for v in c.get("/api/videos").json() if v["title"] == detail_title)
+        r = c.delete(f"/api/videos/{del_target['id']}")
+        j = r.json() if r.status_code == 200 else {}
+        check("DELETE /api/videos/{id}（含快照级联）",
+              r.status_code == 200 and j.get("snapshots_removed", 0) >= 1, r.text)
+        still = [v for v in c.get("/api/videos").json() if v["id"] == del_target["id"]]
+        check("删除后列表中消失", not still, still)
+        check("DELETE 不存在的 id → 404", c.delete("/api/videos/99999").status_code == 404, "")
+
         print("\n[8] 分析类端点 + vision 提取（调用 Anthropic API）")
         if with_analysis:
             target = created_ids[0]

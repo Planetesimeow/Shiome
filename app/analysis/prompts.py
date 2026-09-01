@@ -137,7 +137,8 @@ def _extract_json(text: str) -> str:
 
 
 def call_claude_json(system: str, user_content: str, schema: dict | None = None,
-                     images: list[tuple[str, str]] | None = None) -> dict:
+                     images: list[tuple[str, str]] | None = None,
+                     model: str | None = None) -> dict:
     """
     调用 Claude 拿结构化结果。
 
@@ -156,8 +157,9 @@ def call_claude_json(system: str, user_content: str, schema: dict | None = None,
         ] + [{"type": "text", "text": user_content}]
     else:
         content = user_content
+    use_model = model or MODEL
     kwargs = dict(
-        model=MODEL,
+        model=use_model,
         max_tokens=3000,
         system=system,
         messages=[{"role": "user", "content": content}],
@@ -182,7 +184,7 @@ def call_claude_json(system: str, user_content: str, schema: dict | None = None,
         return {"_api_error": str(e), "retryable": False}
 
     meta = {
-        "model": MODEL,
+        "model": use_model,
         "input_tokens": resp.usage.input_tokens,
         "output_tokens": resp.usage.output_tokens,
         "duration_ms": int((time.time() - t0) * 1000),

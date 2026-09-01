@@ -30,6 +30,10 @@ __pycache__/
 venv/
 .env/
 
+# Local working agreement for AI collaborators — stays local, not public docs
+CLAUDE.md
+CLAUDE.local.md
+
 # OS / editor junk
 .DS_Store
 .idea/

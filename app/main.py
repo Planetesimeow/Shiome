@@ -152,6 +152,19 @@ def get_video(video_id: int):
         return dict(row)
 
 
+@app.delete("/api/videos/{video_id}")
+def delete_video(video_id: int):
+    """删掉一条视频及其从属数据（快照、分析结果）。不可恢复——前端要先 confirm。"""
+    with get_conn() as conn:
+        existing = conn.execute("SELECT id FROM videos WHERE id = ?", (video_id,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "video not found")
+        n_snaps = conn.execute("DELETE FROM video_snapshots WHERE video_id = ?", (video_id,)).rowcount
+        n_results = conn.execute("DELETE FROM analysis_results WHERE video_id = ?", (video_id,)).rowcount
+        conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+    return {"deleted": video_id, "snapshots_removed": n_snaps, "results_removed": n_results}
+
+
 @app.patch("/api/videos/{video_id}/content-profile")
 def update_content_profile(video_id: int, profile: ContentProfileIn):
     """

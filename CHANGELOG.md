@@ -27,6 +27,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   eyewitness alongside numeric snapshots.
 - Capture protocol guide: `docs/capture-guide.md` (per-video +24h/+3d; weekly list +
   account shots; no folder sorting needed).
+- Delete button on each video row (removes its snapshots and analyses too, with confirm).
+- Pluggable vision provider: `VISION_PROVIDER`/`VISION_MODEL` env decouple screenshot
+  extraction from the analysis model — Anthropic (default now `claude-sonnet-4-6`,
+  upgraded from Haiku) or Gemini (`gemini-3.5-flash` via `GEMINI_API_KEY`).
 - Standalone dark-theme HTML account report (`GET /api/report`, `?download=1`), rendered
   from cached analyses only — no new API cost.
 - Dashboard: hero landing with logo/stats/actions, per-video metrics vs baseline,
@@ -82,6 +86,10 @@ Initial public release of the runnable skeleton.
   vision 快照；扩散诊断把它当作数字快照的旁证使用。
 - 采集节奏指南：`docs/capture-guide.md`（每条视频 +24h/+3天；每周列表+账号页各一张；
   无需整理文件夹）。
+- 视频列表每行的删除按钮（连同快照/分析一起删，带确认）。
+- 可插拔提取模型：`VISION_PROVIDER`/`VISION_MODEL` 把截图提取与分析模型解耦——
+  Anthropic（默认升级为 `claude-sonnet-4-6`，不再用 Haiku）或 Gemini
+  （`gemini-3.5-flash`，配 `GEMINI_API_KEY`）。
 - 独立的暗色主题 HTML 账号报告（`GET /api/report`，`?download=1` 下载），只渲染已缓存分析，
   不产生新的 API 费用。
 - Dashboard：带 logo/统计/操作入口的 hero 首屏、单视频指标对基线面板、快照扩散曲线图、
