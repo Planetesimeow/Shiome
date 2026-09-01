@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # 只跑不花钱的那部分。分析类端点会真的调 Anthropic API，
+      # 它们既被 costs_money marker 排除，也被环境变量开关挡着 —— CI 永远不该花钱。
+      - name: Run tests
+        run: pytest -m "not costs_money"
+
+      - name: Check the app actually boots
+        run: |
+          python - <<'PY'
+          import pathlib, tempfile
+          from app import database
+          database.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "boot.db"
+          from fastapi.testclient import TestClient
+          from app.main import app
+          with TestClient(app) as c:
+              assert c.get("/").status_code == 200
+              assert c.get("/api/accounts").status_code == 200
+          print("boots clean")
+          PY
