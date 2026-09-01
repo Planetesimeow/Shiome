@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>潮目 Shiome · 抖音数据分析</title>
+<title>潮目 Shiome · 创作者数据分析</title>
 <link rel="icon" type="image/png" href="/static/img/favicon.png">
 <link rel="stylesheet" href="/static/style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="/static/vendor/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -16,7 +16,7 @@
 <header>
   <div class="brand-wrap" onclick="showOverview()" title="返回账号总览">
     <img class="brand-logo" src="/static/img/logo.png" alt="潮目 Shiome">
-    <span class="brand-sub">満電暴走兔 · 抖音数据分析</span>
+    <span class="brand-sub" id="brand-sub">満電暴走兔 · 创作者数据分析</span>
   </div>
   <div class="header-actions">
     <span class="status" id="status-line">加载中...</span>
@@ -53,6 +53,8 @@
       <p class="hero-hint">手机/电脑截图都行 · 提取后需你确认才入库 · 私密视频自动跳过</p>
     </div>
 
+    <div id="dup-banner" class="dup-banner" style="display:none;"></div>
+
     <div id="vision-panel" style="display:none;"></div>
 
     <div class="chart-wrap">
@@ -67,6 +69,7 @@
 
         <div class="profile-section">
           <div class="eyebrow">内容画像（创作者中心导不出来，手动填）</div>
+          <div class="creative-hint" id="creative-hint"></div>
           <label>内容简述<textarea id="pf-content_summary" rows="2"></textarea></label>
           <label>画面文字要点<textarea id="pf-on_screen_text" rows="2"></textarea></label>
           <label>配乐<input id="pf-music" type="text"></label>

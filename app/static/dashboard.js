@@ -1,4 +1,4 @@
-const state = { videos: [], selectedId: null, activeTab: "enhancement" };
+const state = { posts: [], selectedId: null, activeTab: "enhancement" };
 const PORTFOLIO_LEVEL_TYPES = ["content_ideas", "creator_profile"]; // 不依赖单条视频的分析类型
 
 async function api(path, options = {}) {
@@ -10,10 +10,10 @@ async function api(path, options = {}) {
 // ---------- 视频列表 ----------
 
 async function loadVideos() {
-  state.videos = await api("/api/videos");
+  state.posts = await api("/api/posts");
   const list = document.getElementById("video-list");
   list.innerHTML = "";
-  for (const v of state.videos) {
+  for (const v of state.posts) {
     const li = document.createElement("li");
     li.className = "video-row" + (v.id === state.selectedId ? " selected" : "");
     li.onclick = () => selectVideo(v.id);
@@ -29,16 +29,16 @@ async function loadVideos() {
       <button class="row-delete" title="删除这条视频及其快照/分析" onclick="deleteVideo(event, ${v.id}, this)">✕</button>`;
     list.appendChild(li);
   }
-  document.getElementById("status-line").textContent = `${state.videos.length} 条视频`;
-  document.getElementById("video-count").textContent = state.videos.length || "";
+  document.getElementById("status-line").textContent = `${state.posts.length} 条作品`;
+  document.getElementById("video-count").textContent = state.posts.length || "";
   updateHeroStats();
 }
 
 // ---------- 账号总览 hero ----------
 
 function updateHeroStats() {
-  document.getElementById("hs-count").textContent = state.videos.length || "0";
-  document.getElementById("hs-latest").textContent = state.videos[0]?.publish_date ?? "--";
+  document.getElementById("hs-count").textContent = state.posts.length || "0";
+  document.getElementById("hs-latest").textContent = state.posts[0]?.publish_date ?? "--";
 }
 
 async function loadHeroBaseline() {
@@ -58,11 +58,11 @@ function showOverview() {
 
 async function deleteVideo(event, id, btn) {
   event.stopPropagation(); // 别触发行点击选中
-  const video = state.videos.find((v) => v.id === id);
+  const video = state.posts.find((v) => v.id === id);
   if (!confirm(`删除「${video?.title ?? id}」？\n它的快照和分析结果会一起删除，不可恢复。`)) return;
   btn.disabled = true;
   try {
-    await api(`/api/videos/${id}`, { method: "DELETE" });
+    await api(`/api/posts/${id}`, { method: "DELETE" });
     document.getElementById("status-line").textContent = "已删除";
     if (state.selectedId === id) showOverview();
     else await loadVideos();
@@ -171,7 +171,7 @@ async function loadResultForActiveTab() {
 
   const query = PORTFOLIO_LEVEL_TYPES.includes(type)
     ? `analysis_type=${type}`
-    : `video_id=${state.selectedId}&analysis_type=${type}`;
+    : `post_id=${state.selectedId}&analysis_type=${type}`;
   const cached = await api(`/api/analyze/results?${query}`);
 
   if (cached.length > 0) {
@@ -197,9 +197,9 @@ async function runAnalysis(type) {
   try {
     let result;
     if (PORTFOLIO_LEVEL_TYPES.includes(type)) {
-      result = await api(`/api/analyze/${type}`, { method: "POST" });
+      result = await api(`/api/analyze/account/${type}`, { method: "POST" });
     } else {
-      result = await api(`/api/analyze/${state.selectedId}/${type}`, { method: "POST" });
+      result = await api(`/api/analyze/posts/${state.selectedId}/${type}`, { method: "POST" });
     }
     renderResult(type, result);
   } catch (e) {
@@ -298,7 +298,7 @@ function pct(x) { return x == null ? "--" : (x * 100).toFixed(1) + "%"; }
 async function loadMetricsPanel(id) {
   const panel = document.getElementById("metrics-panel");
   try {
-    const [video, baseline] = await Promise.all([api(`/api/videos/${id}`), api(`/api/baseline`)]);
+    const [video, baseline] = await Promise.all([api(`/api/posts/${id}`), api(`/api/baseline`)]);
     const saveRate = rate(video.saves, video.plays);
     const v2f = rate(video.new_followers, video.profile_visits);
     const highIntent = (video.high_intent_comments || 0) + (video.high_intent_dms || 0);
@@ -331,7 +331,7 @@ let diffusionChartInstance = null;
 
 async function loadDiffusionChart(id) {
   const wrap = document.getElementById("diffusion-wrap");
-  const snapshots = await api(`/api/videos/${id}/snapshots`);
+  const snapshots = await api(`/api/posts/${id}/snapshots`);
   if (!snapshots || snapshots.length === 0) {
     wrap.style.display = "none";
     if (diffusionChartInstance) { diffusionChartInstance.destroy(); diffusionChartInstance = null; }
@@ -369,12 +369,21 @@ async function loadDiffusionChart(id) {
 // ---------- 内容画像 ----------
 
 async function loadContentProfileForm(id) {
-  const video = await api(`/api/videos/${id}`);
-  document.getElementById("pf-content_summary").value = video.content_summary || "";
-  document.getElementById("pf-on_screen_text").value = video.on_screen_text || "";
-  document.getElementById("pf-music").value = video.music || "";
-  document.getElementById("pf-hook_description").value = video.hook_description || "";
-  document.getElementById("pf-content_pillar").value = video.content_pillar || "";
+  // 内容画像住在 creative 上，不在 post 上：同一条内容发多个平台时只有一份，
+  // 改哪条 post 的画像，改的都是同一个 creative。
+  const post = await api(`/api/posts/${id}`);
+  const c = post.creative || {};
+  document.getElementById("pf-content_summary").value = c.content_summary || "";
+  document.getElementById("pf-on_screen_text").value = c.on_screen_text || "";
+  document.getElementById("pf-music").value = c.music || "";
+  document.getElementById("pf-hook_description").value = c.hook_description || "";
+  document.getElementById("pf-content_pillar").value = c.content_pillar || "";
+  const hint = document.getElementById("creative-hint");
+  if (hint) {
+    hint.textContent = post.creative_id
+      ? `内容画像 #${post.creative_id}（这条内容在其他平台的发布共用同一份）`
+      : "还没有内容画像，保存后会为这条内容建立一份";
+  }
 }
 
 async function saveContentProfile() {
@@ -388,7 +397,7 @@ async function saveContentProfile() {
     hook_description: document.getElementById("pf-hook_description").value,
     content_pillar: document.getElementById("pf-content_pillar").value,
   };
-  await api(`/api/videos/${state.selectedId}/content-profile`, {
+  await api(`/api/posts/${state.selectedId}/content-profile`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -399,7 +408,7 @@ async function saveContentProfile() {
 // ---------- 快照 ----------
 
 async function loadSnapshots(id) {
-  const snapshots = await api(`/api/videos/${id}/snapshots`);
+  const snapshots = await api(`/api/posts/${id}/snapshots`);
   const list = document.getElementById("snapshot-list");
   if (snapshots.length === 0) {
     list.innerHTML = `<li>还没有快照记录</li>`;
@@ -424,7 +433,7 @@ async function addSnapshot() {
       ? Number(document.getElementById("sn-completion").value) / 100
       : null,
   };
-  await api(`/api/videos/${state.selectedId}/snapshots`, {
+  await api(`/api/posts/${state.selectedId}/snapshots`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -442,7 +451,7 @@ document.getElementById("csv-input").addEventListener("change", async (e) => {
   formData.append("file", file);
   document.getElementById("status-line").textContent = "导入中...";
   try {
-    const result = await api("/api/videos/import", { method: "POST", body: formData });
+    const result = await api("/api/posts/import", { method: "POST", body: formData });
     let msg = `新增 ${result.inserted} 条，更新 ${result.updated} 条`;
     if (result.errors?.length) {
       msg += `，${result.errors.length} 行有问题`;
@@ -628,3 +637,72 @@ function discardVisionDraft(cardId) {
 loadVideos();
 loadTrendChart();
 loadHeroBaseline();
+loadDuplicateCandidates();
+
+
+// ---------- 疑似重复的作品（发现由机器做，合并由人确认）----------
+//
+// 截图是主要数据源，而同一条作品在列表页（标题被截断）和详情页（完整标题）长得不一样，
+// OCR 还会读错字，于是同一条内容容易进两行。这里只列出候选和判断依据 ——
+// 真正合并要点一下，跟截图入库要人确认是同一个道理：破坏性操作不自动做。
+
+async function loadDuplicateCandidates() {
+  const wrap = document.getElementById("dup-banner");
+  if (!wrap) return;
+  let groups = [];
+  try {
+    groups = await api("/api/posts/duplicate-candidates");
+  } catch (e) {
+    wrap.style.display = "none";
+    return;
+  }
+  if (!groups.length) {
+    wrap.style.display = "none";
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.style.display = "block";
+  wrap.innerHTML =
+    `<div class="dup-head">发现 ${groups.length} 组疑似重复的作品 —— 确认后才会合并</div>` +
+    groups.map((g, i) => {
+      const rows = g.posts
+        .map(
+          (p) => `<li><span class="dup-id">#${p.id}</span>
+             <span class="dup-title">${escapeHtml(p.title || "(无标题)")}</span>
+             <span class="dup-metrics">播放 ${formatNum(p.plays)} · 赞 ${formatNum(p.likes)}
+             · 评 ${formatNum(p.comments)} · 完播 ${p.completion_rate != null ? (p.completion_rate * 100).toFixed(1) + "%" : "--"}</span></li>`
+        )
+        .join("");
+      return `<div class="dup-group">
+        <div class="dup-reason">${escapeHtml(g.publish_date)} · ${escapeHtml(g.reason)}</div>
+        <ul class="dup-list">${rows}</ul>
+        <button class="primary" onclick="mergeDuplicates(${i}, [${g.post_ids.join(",")}], this)">
+          合并这 ${g.post_ids.length} 条
+        </button>
+      </div>`;
+    })
+    .join("");
+}
+
+async function mergeDuplicates(idx, postIds, btn) {
+  if (!confirm(`把 #${postIds.join("、#")} 合并成一条？\n` +
+               `保留字段最全的那条作为底稿，其余的非空数值补进来，快照合并去重。\n` +
+               `这一步不可撤销（但数据库每天有备份）。`)) return;
+  btn.disabled = true;
+  try {
+    const r = await api("/api/posts/merge", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ post_ids: postIds }),
+    });
+    document.getElementById("status-line").textContent =
+      `已合并为 #${r.merged_into}（去掉 ${r.removed_posts.length} 条重复、${r.snapshots_deduped} 条重复快照）`;
+    await loadVideos();
+    await loadTrendChart();
+    await loadHeroBaseline();
+    await loadDuplicateCandidates();
+  } catch (err) {
+    btn.disabled = false;
+    document.getElementById("status-line").textContent = "合并失败: " + err.message;
+  }
+}

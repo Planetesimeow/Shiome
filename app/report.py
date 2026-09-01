@@ -4,15 +4,17 @@
 只读取 analysis_results 里**已缓存**的分析结果，不触发任何新的 API 调用（不花钱）。
 供 GET /api/report 直接返回，或加 ?download=1 下载成单个 .html 文件。
 
-文本/表格全部服务端渲染成 HTML（不依赖 JS 也能读、能打印）；只有图表用内联 Chart.js
-读取内嵌的数据数组来画。配色复用 style.css 的 :root 令牌。
+文本/表格全部服务端渲染成 HTML（不依赖 JS 也能读、能打印）；只有图表用 Chart.js
+读取内嵌的数据数组来画 —— Chart.js 本体也是内联进来的（app/static/vendor/），
+所以这份 HTML 断网、五年后打开，图还在。配色复用 style.css 的 :root 令牌。
 """
 import json
 import html
+from pathlib import Path
 from datetime import datetime
 
 from app.database import get_snapshots
-from app.analysis.prompts import compute_baseline, PERSONA_CONTEXT  # noqa: F401 (persona 备用)
+from app.analysis.prompts import compute_baseline
 
 ANALYSIS_ORDER = ["enhancement", "trend_forecast", "pool_diagnosis"]
 ANALYSIS_LABELS = {
@@ -133,12 +135,14 @@ def _render_result(atype: str, d) -> str:
 def _latest_results(conn) -> dict:
     """(video_id, analysis_type) -> 最新一条结果 dict。按时间升序遍历，后写的覆盖，留下最新。"""
     rows = conn.execute(
-        "SELECT video_id, analysis_type, result_json FROM analysis_results ORDER BY created_at ASC"
+        """SELECT post_id, account_id, analysis_type, result_json
+           FROM analysis_results ORDER BY created_at ASC"""
     ).fetchall()
     latest = {}
     for r in rows:
         try:
-            latest[(r["video_id"], r["analysis_type"])] = json.loads(r["result_json"])
+            # 账号级分析没有 post_id，统一用 None 作键，和逐条作品的结果分开放
+            latest[(r["post_id"], r["analysis_type"])] = json.loads(r["result_json"])
         except (json.JSONDecodeError, TypeError):
             pass
     return latest
@@ -178,11 +182,12 @@ def _render_metrics_grid(v: dict, baseline: dict) -> str:
 
 # ---------- 主函数 ----------
 
-def build_report_html(conn) -> str:
+def build_report_html(conn, account: dict) -> str:
     videos = [dict(r) for r in conn.execute(
-        "SELECT * FROM videos ORDER BY publish_date ASC"
+        "SELECT * FROM posts WHERE account_id = ? ORDER BY publish_date ASC",
+        (account["id"],),
     ).fetchall()]
-    baseline = compute_baseline(conn)
+    baseline = compute_baseline(conn, account["id"])
     latest = _latest_results(conn)
     snaps = {v["id"]: get_snapshots(conn, v["id"]) for v in videos}
     generated = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -263,8 +268,9 @@ def build_report_html(conn) -> str:
 
     body_html = (
         f'<header class="report-header"><h1>潮目 · 账号分析报告</h1>'
-        f'<div class="sub mono">生成于 {generated} · 共 {n_videos} 条视频'
-        f'（异常期 {n_anomaly} 条）· 数据为已缓存分析，非实时</div></header>'
+        f'<div class="sub mono">{_esc(account.get("display_name") or "未命名账号")}'
+        f' · {_esc(account.get("platform"))} · 生成于 {generated} · 共 {n_videos} 条作品'
+        f'（异常期 {n_anomaly} 条）· 数据为已缓存分析，非实时</div></header>' 
         f'<section><h2 class="section-h">账号概览</h2>'
         f'<div class="chart-wrap"><div class="chart-title">播放量 & 完播率趋势</div>'
         f'<canvas id="trend" height="90"></canvas>'
@@ -278,10 +284,24 @@ def build_report_html(conn) -> str:
 
     return (_HTML_HEAD
             + body_html
-            + '<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>'
+            + f"<script>{_chart_js_lib()}</script>"
             + '<script>const CHART_DATA=' + json.dumps(chart_data, ensure_ascii=False) + ';</script>'
             + _CHART_JS
             + "</body></html>")
+
+
+def _chart_js_lib() -> str:
+    """
+    把 Chart.js 本体读进来内联。
+    v1 这里挂的是 CDN <script src>，但函数文档说这份报告「自包含」—— 那是不成立的：
+    下载下来断网打开、或者两年后 CDN 路径变了，图就全没了。报告是要存档的东西，
+    多 200KB 换它十年后还能打开，是划算的。
+    """
+    lib = Path(__file__).parent / "static" / "vendor" / "chart.umd.min.js"
+    try:
+        return lib.read_text(encoding="utf-8")
+    except OSError:
+        return "console.warn('Chart.js 未内联：app/static/vendor/chart.umd.min.js 缺失');"
 
 
 # ---------- 静态模板（不含 f-string，避免和 CSS/JS 的花括号打架）----------
