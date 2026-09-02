@@ -15,7 +15,7 @@ from datetime import datetime
 
 # 我们的字段 -> 可能出现的原始表头（全部小写比较）
 COLUMN_ALIASES = {
-    "douyin_video_id": ["视频id", "作品id", "video_id"],
+    "platform_post_id": ["视频id", "作品id", "笔记id", "稿件id", "bv号", "video_id", "note_id"],
     "title": ["视频标题", "标题", "title"],
     "publish_date": ["发布时间", "发布日期", "publish_date", "date"],
     "plays": ["播放量", "播放数", "plays", "views"],

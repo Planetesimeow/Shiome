@@ -1,9 +1,16 @@
 """
-三个分析模块（增强方向 / 内容建议 / 流量预估）共用的东西放这里：
-账号人设上下文、基线指标计算、调用 Claude 的公共方法。
+所有分析模块共用的东西：账号上下文、平台机制参考框架、基线计算、调 Claude 的公共方法。
 
-设计上刻意把三类分析拆成三个独立 prompt/独立调用（而不是一个大 prompt 全干），
-原因见 README：单一职责，输出更聚焦，也方便你以后单独迭代某一类分析的 prompt。
+v2 的两处重要变化：
+1. **人设不再写死在源码里。** v1 把一个具体账号的人设常量写在这个文件中间；
+   工具一旦服务多个账号（哪怕只是同一个人的三个平台），那就是错的。
+   现在人设是 accounts.persona 的数据，按 account_id 取。
+2. **基线按账号（因而按平台）隔离。** v1 的 compute_baseline 对表里最近 20 条求平均，
+   不分平台。抖音完播率、B站完播率、和根本没有完播率的小红书图文笔记被平均成一个数，
+   而 dashboard 上每个"对基线 Δ"都由它算出来 —— 这类 bug 不会报错，只会给出自信的错误结论。
+
+分析刻意拆成多个独立 prompt/独立调用（而不是一个大 prompt 全干）：单一职责，输出更聚焦，
+也方便单独迭代某一类分析而不影响其他。
 """
 import os
 import re
@@ -18,35 +25,58 @@ _client = None
 def get_client() -> Anthropic:
     global _client
     if _client is None:
-        _client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        _client = Anthropic(api_key=get_api_key())
     return _client
 
 
-MODEL = os.environ.get("ANALYSIS_MODEL", "claude-haiku-4-5-20251001")
+def get_api_key() -> str | None:
+    """
+    单独一个函数而不是内联 os.environ —— 将来支持多用户时，
+    每个用户自带 key 只要改这里，不用动任何调用点。
+    """
+    return os.environ.get("ANTHROPIC_API_KEY")
 
-# 账号人设 —— 这段先写死在这，后面如果人设迭代了在这改就行。
-# 分析类 prompt 都会带上这段，保证建议不会跑偏到"泛娱乐涨粉"逻辑上。
-PERSONA_CONTEXT = """
-账号背景：
-- 账号定位：面向在日高净值华人群体的生活方式顾问，内容是信任建立的第一步，
-  最终目标是转化为不动产/车辆购置等咨询服务的客户，客户案例再反哺内容。
-- 内容公式：体态/体型反差作为钩子 + 热量/宏量营养数据作为"系统感"元素 + 自嘲式幽默作为人设。
-- 目标人群体量小、决策周期长、客单价高。账号的"成功"不是泛娱乐意义上的涨粉曲线，
-  而是精准触达 + 高转化，粉丝数本身不是核心指标。
-- 内容风控：涉及资产、移民身份、大额消费等表述在平台上容易触发限流审查，
-  分析时要主动识别这类措辞风险，而不是等被限流才发现。
-""".strip()
+
+MODEL = os.environ.get("ANALYSIS_MODEL", "claude-haiku-4-5-20251001")
 
 SENSITIVE_TOPIC_NOTE = (
     "在给内容建议时，凡是涉及资产规模、移民/身份、大额消费金额的具体表述，"
     "都要在 risk_note 字段里标注更安全的替代说法，而不是直接建议原始措辞。"
 )
 
+_NO_PERSONA_NOTE = (
+    "【这个账号还没有填写人设】不要假设它的定位、目标人群或转化目标。"
+    "分析时只依据数据本身，并在结论里指出：补上账号人设后判断会更准。"
+)
+
+
+def get_account(conn, account_id: int | None) -> dict | None:
+    if account_id is None:
+        return None
+    row = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def build_account_context(account: dict | None) -> str:
+    """
+    账号上下文段落。人设为空时如实说明，绝不沿用别的账号的人设 ——
+    悄悄套用错误的定位，比没有定位更糟。
+    """
+    if not account:
+        return _NO_PERSONA_NOTE
+    lines = [f"账号：{account.get('display_name') or '未命名'}"
+             f"（平台：{account.get('platform')}）"]
+    persona = (account.get("persona") or "").strip()
+    lines.append(persona if persona else _NO_PERSONA_NOTE)
+    if account.get("goal_note"):
+        lines.append(f"这个账号怎么算成功：{account['goal_note']}")
+    return "\n".join(lines)
+
+
 # 平台推荐机制参考框架 —— 按平台分开，用 get_mechanism_context(platform) 取。
 # 重要：这是"相对判断的参照系"，不是官方精确阈值，绝不能当 pass/fail 硬判据，
-# 更不能拿泛娱乐大盘门槛评判这个账号（本账号目标是精准触达，不是泛娱乐爆量）。
-# v1.0.0 只覆盖抖音；小红书 / B站 是预留的接口（socket），到 v2.0.0 再从
-# docs/platform-mechanism-findings.md 把结论填进来。
+# 更不能拿泛娱乐大盘门槛评判精准触达型账号。
+# 小红书 Phase 3 / B站 Phase 4 接入，结论从 docs/platform-mechanism-findings.md 搬。
 DOUYIN_MECHANISM_CONTEXT = """
 抖音推荐机制参考（经验框架，用于相对判断，不是精确阈值，更不是及格线）：
 
@@ -64,42 +94,49 @@ DOUYIN_MECHANISM_CONTEXT = """
 - 断崖归零（疑似审核拦截 / 判违规）：起量后突然断崖式归零。
 - 自然衰减：正常起量后互动率逐轮下滑、系统试探更大人群失败，曲线平滑收敛封顶——注意它
   和"冻结"的手感不同（平滑收敛 vs 冻结走平），别混为一谈。
-关键时间窗：首 1 小时（初始人群反馈）、24 小时（多数视频命运已定）、3-7 天（可能翻热/回流）。
+
+【时间尺度】抖音内容生命周期偏短，是天级的：首 1 小时决定初始人群反馈，24 小时内多数
+视频命运已定，3-7 天存在翻热/回流的可能（常由搜索、合集或系统重新试探触发）。推断走向
+时按这个尺度来，不要套用搜索长尾型平台的周/月级周期。
 
 信号解读（抖音是单列沉浸流，用户没有"点不点封面"的选择，所以完播/停留权重远高于封面点击率）：
 - 完播率是"入场券"不是唯一决定项——多目标模型里没有单一最重要指标，别拿某个百分比当及格线。
-- 精准触达信号（本账号真正该看的）：关注转化、主页访问、收藏、评论相关度（评论是不是目标
-  人群在提问）、复看。这些更像是对"这条内容触达的人对不对"的投票。
-- 泛量噪声信号：点赞、裸播放量。高播放 + 泛互动对精准触达账号价值有限，别被它带偏方向。
+- 精准触达信号：关注转化、主页访问、收藏、评论相关度（评论是不是目标人群在提问）、复看。
+  这些更像是对"这条内容触达的人对不对"的投票。
+- 泛量噪声信号：点赞、裸播放量。高播放 + 泛互动对精准触达型账号价值有限，别被它带偏方向。
 
 限流常被过度归因：多数"我被限流了"其实是自然衰减或内容本身不行。先用上面的曲线形状区分
 （冻结 vs 平滑衰减），再下结论；DOU+ 投放被拒可当一次内容"体检"。
 """.strip()
 
-# 平台 → 机制参考框架的注册表。加新平台就往这里加一项（v2.0.0）。
 _PLATFORM_MECHANISM = {
     "douyin": DOUYIN_MECHANISM_CONTEXT,
 }
 
 # 未接入平台的占位说明：不让模型假装了解还没写的平台机制。
+# 这段是这个项目最该守住的纪律之一 —— 见 docs/roadmap-v2.md。
 _PLATFORM_STUB = (
-    "【{platform} 机制尚未接入】本工具 v1.0.0 只覆盖抖音；{platform} 的推荐机制将在 v2.0.0 接入，"
-    "参考 docs/platform-mechanism-findings.md 第二部分。在此之前不要假装了解该平台机制，"
-    "分析时请明确指出当前缺少该平台机制参考框架，置信度从低起步。"
+    "【{platform} 机制尚未接入】本工具目前只覆盖抖音；{platform} 的推荐机制参考框架"
+    "还没有写（计划见 docs/roadmap-v2.md，研究底稿见 docs/platform-mechanism-findings.md）。"
+    "在此之前：不要假装了解该平台机制，不要把抖音的规律（尤其是「24小时内定生死」这种"
+    "时间尺度、以及完播率权重远高于封面点击率这种单列沉浸流特性）套到它身上。"
+    "分析时明确指出当前缺少该平台的参考框架，置信度从低起步。"
 )
 
 
 def get_mechanism_context(platform: str | None) -> str:
-    """按平台返回推荐机制参考框架。v1.0.0 只有抖音；小红书/B站命中占位说明。"""
+    """按平台返回推荐机制参考框架。没接入的平台命中占位说明。"""
     return _PLATFORM_MECHANISM.get((platform or "douyin").lower()) \
         or _PLATFORM_STUB.format(platform=platform)
 
 
-def compute_baseline(conn, window: int = 20) -> dict:
+def compute_baseline(conn, account_id: int, window: int = 20) -> dict:
     """
-    账号级基线指标，只用非异常期的视频计算，避免限流期的数据拉低/污染判断。
-    只取最近 window 条：基线要代表"当前状态"，全历史平均会把早期摸索阶段的数据
-    掺进来，让进步中的账号每条新视频的 Δ 都显得虚高/失真。
+    账号级基线指标。两个限定：
+    - 只算这一个账号（因而只算一个平台）：跨平台平均完播率没有意义。
+    - 只用非异常期的作品，避免限流期数据污染判断。
+    - 只取最近 window 条：基线要代表"当前状态"，全历史平均会把早期摸索阶段掺进来，
+      让进步中的账号每条新作品的 Δ 都显得虚高。
     """
     row = conn.execute(
         """
@@ -111,21 +148,20 @@ def compute_baseline(conn, window: int = 20) -> dict:
             AVG(CAST(new_followers AS FLOAT) / NULLIF(profile_visits, 0)) as avg_visit_to_follow_rate,
             AVG(high_intent_comments + high_intent_dms) as avg_high_intent_signals
         FROM (
-            SELECT * FROM videos
-            WHERE is_anomaly_period = 0
+            SELECT * FROM posts
+            WHERE account_id = ? AND is_anomaly_period = 0
             ORDER BY publish_date DESC
             LIMIT ?
         )
         """,
-        (window,),
+        (account_id, window),
     ).fetchone()
     return dict(row) if row else {}
 
 
 def _extract_json(text: str) -> str:
-    """从模型输出里尽量把 JSON 抠出来：优先取 ```json``` 代码块里的内容，再收窄到第一个 {
-    到最后一个 } 之间。用来容忍模型在 JSON 前后多写了说明文字（Haiku 有时不听"只返回 JSON"，
-    会在代码块后面再补一段解读）。"""
+    """从模型输出里尽量把 JSON 抠出来：优先取 ```json``` 代码块，再收窄到第一个 {
+    到最后一个 } 之间。用来容忍模型在 JSON 前后多写了说明文字。"""
     t = text.strip()
     m = re.search(r"```(?:json)?\s*(.*?)```", t, re.DOTALL)
     if m:
@@ -145,7 +181,7 @@ def call_claude_json(system: str, user_content: str, schema: dict | None = None,
     - 传 schema 时用工具强制 JSON（tool_choice 指定 emit_result），模型只能按 schema
       提交参数，从结构上消灭"JSON 前后多写说明文字"导致的解析失败。
     - 传 images（[(media_type, base64), ...]）时走 vision：图片块在前、文字在后。
-    - API 层错误（key 失效/限流/网络）不再往上抛 500，而是返回
+    - API 层错误（key 失效/限流/网络）不往上抛 500，而是返回
       {"_api_error": 人话, "retryable": bool}，由前端展示并提供重试。
     - 附带 _meta（模型/token 用量/耗时），save_result 会存进库，成本可查。
     """
@@ -207,18 +243,21 @@ def call_claude_json(system: str, user_content: str, schema: dict | None = None,
     return result
 
 
-def save_result(video_id: int | None, analysis_type: str, result: dict):
+def save_result(analysis_type: str, result: dict, post_id: int | None = None,
+                account_id: int | None = None, creative_id: int | None = None):
+    """分析结果落库。三个可空外键决定这条结果说的是谁：一条作品 / 一个创作物 / 整个账号。"""
     if result.get("_api_error"):
         return  # API 没打通的调用不落库，避免污染"最新结果"
     meta = result.get("_meta") or {}
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO analysis_results
-               (video_id, analysis_type, result_json, model_used,
-                input_tokens, output_tokens, duration_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (post_id, creative_id, account_id, analysis_type, result_json,
+                model_used, input_tokens, output_tokens, duration_ms)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (
-                video_id, analysis_type, json.dumps(result, ensure_ascii=False),
+                post_id, creative_id, account_id, analysis_type,
+                json.dumps(result, ensure_ascii=False),
                 meta.get("model", MODEL), meta.get("input_tokens"),
                 meta.get("output_tokens"), meta.get("duration_ms"),
             ),

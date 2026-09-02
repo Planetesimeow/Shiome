@@ -1,5 +1,13 @@
+"""
+FastAPI 路由层。
+
+v2 的 API 是破坏性重命名过的：/api/videos* → /api/posts*，另外多了 accounts / creatives
+/ creator-notes / duplicate-candidates。没有保留旧路径的兼容别名 —— 唯一的调用方就是
+我们自己的前端，留着两套名字只会让新来的人不知道该用哪个。
+"""
 import json
 from pathlib import Path
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,25 +18,27 @@ from fastapi.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
 
-from app.database import init_db, get_conn, video_falls_in_anomaly, get_snapshots, backup_db
-from app.models import (
-    VideoIn, AnomalyPeriodIn, ContentProfileIn, SnapshotIn, VisionSaveIn,
+from app.database import (
+    init_db, get_conn, post_falls_in_anomaly, get_snapshots, backup_db,
+    get_default_account_id,
 )
+from app.models import (
+    PostIn, AccountIn, AccountPatch, CreativeIn, CreativePatch,
+    AnomalyPeriodIn, SnapshotIn, VisionSaveIn, MergeIn, CreatorNoteIn,
+)
+from app.dedupe import find_duplicate_candidates, merge_posts, title_similarity, \
+    TITLE_SIMILARITY_THRESHOLD
 from app.vision import extract_screenshot
 from app.ingestion import parse_creator_center_csv
-from app.analysis.prompts import compute_baseline
+from app.analysis.prompts import compute_baseline, get_account
+from app.analysis.registry import ANALYSES, list_analyses, POST_SCOPE, ACCOUNT_SCOPE
 from app.report import build_report_html
-from app.analysis.enhancement import analyze_enhancement
-from app.analysis.content_ideas import analyze_content_ideas
-from app.analysis.trend_forecast import analyze_trend_forecast
-from app.analysis.pool_diagnosis import analyze_pool_tier
-from app.analysis.creator_profile import analyze_creator_profile
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    init_db()
-    backup_db()  # 每天首启快照一份，防 Dropbox 同步弄坏唯一的手录数据
+    init_db()          # 建表 + 跑结构迁移（v1→v2 会自己先备份）
+    backup_db()        # 每天首启快照一份，防云同步弄坏唯一的手录数据
     yield
 
 
@@ -36,86 +46,201 @@ app = FastAPI(title="潮目 Shiome", lifespan=lifespan)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-# ---------- 视频数据 ----------
+def _resolve_account(conn, account_id: int | None) -> dict:
+    """没指定账号就用默认账号。所有查询都经过它，不在代码里写死 id=1。"""
+    if account_id is None:
+        account_id = get_default_account_id(conn)
+    account = get_account(conn, account_id)
+    if not account:
+        raise HTTPException(404, "account not found（还没有账号，先 POST /api/accounts）")
+    return account
 
-@app.post("/api/videos")
-def add_video(video: VideoIn):
+
+# ---------- 账号 ----------
+
+@app.get("/api/accounts")
+def list_accounts(owner_id: str = "local"):
     with get_conn() as conn:
-        anomaly = video_falls_in_anomaly(conn, video.publish_date)
+        rows = conn.execute(
+            "SELECT * FROM accounts WHERE owner_id = ? ORDER BY id", (owner_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/accounts")
+def create_account(account: AccountIn, owner_id: str = "local"):
+    with get_conn() as conn:
         cur = conn.execute(
-            """
-            INSERT INTO videos (platform, douyin_video_id, title, publish_date, duration_sec,
-                plays, likes, comments, shares, saves, completion_rate, avg_watch_time,
-                profile_visits, new_followers, high_intent_comments, high_intent_dms,
-                is_anomaly_period, notes)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                video.platform, video.douyin_video_id, video.title, video.publish_date, video.duration_sec,
-                video.plays, video.likes, video.comments, video.shares, video.saves,
-                video.completion_rate, video.avg_watch_time, video.profile_visits,
-                video.new_followers, video.high_intent_comments, video.high_intent_dms,
-                int(anomaly), video.notes,
-            ),
+            """INSERT INTO accounts (owner_id, platform, handle, display_name, persona, goal_note)
+               VALUES (?,?,?,?,?,?)""",
+            (owner_id, account.platform, account.handle, account.display_name,
+             account.persona, account.goal_note),
         )
         return {"id": cur.lastrowid}
 
 
-# 数据指标列（CSV 导入和截图提取共用的 upsert 白名单）。
-# 内容画像字段（content_summary 等）永远不在这里——那是手动填的，数据同步不许碰。
+@app.patch("/api/accounts/{account_id}")
+def update_account(account_id: int, patch: AccountPatch):
+    fields = patch.model_dump(exclude_unset=True)
+    with get_conn() as conn:
+        if not get_account(conn, account_id):
+            raise HTTPException(404, "account not found")
+        if fields:
+            conn.execute(
+                f"UPDATE accounts SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                list(fields.values()) + [account_id],
+            )
+        return dict(conn.execute("SELECT * FROM accounts WHERE id = ?",
+                                 (account_id,)).fetchone())
+
+
+# ---------- 创作物（内容画像住这里，一条内容发多平台只填一次）----------
+
+@app.get("/api/creatives")
+def list_creatives(owner_id: str = "local", limit: int = 100):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM creatives WHERE owner_id = ? ORDER BY id DESC LIMIT ?",
+            (owner_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+@app.post("/api/creatives")
+def create_creative(creative: CreativeIn, owner_id: str = "local"):
+    with get_conn() as conn:
+        return {"id": _insert_creative(conn, creative.model_dump(), owner_id)}
+
+
+def _insert_creative(conn, data: dict, owner_id: str = "local") -> int:
+    cols = [k for k, v in data.items() if v is not None]
+    cur = conn.execute(
+        f"INSERT INTO creatives (owner_id, {','.join(cols)}) "
+        f"VALUES (?, {','.join('?' * len(cols))})",
+        [owner_id] + [data[c] for c in cols],
+    )
+    return cur.lastrowid
+
+
+@app.get("/api/creatives/{creative_id}")
+def get_creative(creative_id: int):
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM creatives WHERE id = ?", (creative_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "creative not found")
+        return dict(row)
+
+
+@app.patch("/api/creatives/{creative_id}")
+def update_creative(creative_id: int, patch: CreativePatch):
+    """
+    只更新显式传了的字段。传空字符串就是真的清空 —— 表单显示的一直是库里的当前值，
+    「清空后保存」就该真的清空。
+    """
+    fields = patch.model_dump(exclude_unset=True)
+    with get_conn() as conn:
+        if not conn.execute("SELECT 1 FROM creatives WHERE id = ?", (creative_id,)).fetchone():
+            raise HTTPException(404, "creative not found")
+        if fields:
+            conn.execute(
+                f"UPDATE creatives SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                list(fields.values()) + [creative_id],
+            )
+        return dict(conn.execute("SELECT * FROM creatives WHERE id = ?",
+                                 (creative_id,)).fetchone())
+
+
+# ---------- 作品（发布）----------
+
+# 数据指标列：CSV 导入和截图提取共用的 upsert 白名单。
+# 内容画像字段不在这里，也不可能在 —— v2 之后它们根本不在 posts 表上，
+# 数据同步在结构上就碰不到手填的内容。
 _METRIC_COLS = [
-    "douyin_video_id", "duration_sec", "plays", "likes", "comments", "shares", "saves",
+    "platform_post_id", "duration_sec", "plays", "likes", "comments", "shares", "saves",
     "completion_rate", "avg_watch_time", "profile_visits", "new_followers",
     "danmaku_count", "cover_ctr", "bounce_2s_rate", "unfollows", "fan_conversion_rate",
-    "raw_data",
+    "raw_data", "platform_data",
 ]
 
 
-def upsert_video(conn, r: dict) -> tuple[int, str]:
+def _find_existing_post(conn, account_id: int, r: dict) -> int | None:
     """
-    按 douyin_video_id（有则优先）或 (title, publish_date) 匹配已有视频：
-    命中→只更新 r 里带值的指标列（None 不覆盖旧值），没命中→插入。
-    返回 (video_id, "inserted"|"updated")。CSV 导入和截图确认入库共用这一条路。
+    身份判定，按可靠性从高到低：
+    1. 平台侧作品 ID（有就一锤定音）
+    2. 同账号 + 同发布日期 + 标题高度相似 —— 列表页标题是截断的、OCR 还会读错字，
+       v1 用精确匹配，于是同一条视频进了两行。
     """
-    anomaly = video_falls_in_anomaly(conn, r.get("publish_date", ""))
-    existing = None
-    if r.get("douyin_video_id"):
-        existing = conn.execute(
-            "SELECT id FROM videos WHERE douyin_video_id = ?",
-            (r["douyin_video_id"],),
+    if r.get("platform_post_id"):
+        row = conn.execute(
+            "SELECT id FROM posts WHERE account_id = ? AND platform_post_id = ?",
+            (account_id, r["platform_post_id"]),
         ).fetchone()
-    if existing is None:
-        existing = conn.execute(
-            "SELECT id FROM videos WHERE title = ? AND publish_date = ?",
-            (r.get("title"), r.get("publish_date")),
-        ).fetchone()
+        if row:
+            return row["id"]
+    rows = conn.execute(
+        "SELECT id, title FROM posts WHERE account_id = ? AND publish_date = ?",
+        (account_id, r.get("publish_date")),
+    ).fetchall()
+    best, best_sim = None, 0.0
+    for row in rows:
+        sim = title_similarity(r.get("title"), row["title"])
+        if sim > best_sim:
+            best, best_sim = row["id"], sim
+    return best if best_sim >= TITLE_SIMILARITY_THRESHOLD else None
 
+
+def upsert_post(conn, r: dict, account_id: int, platform: str = "douyin") -> tuple[int, str]:
+    """命中已有作品就只更新带值的指标列（None 不覆盖旧值），没命中才插入。"""
+    anomaly = post_falls_in_anomaly(conn, account_id, r.get("publish_date", ""))
+    if isinstance(r.get("platform_data"), dict):
+        r = {**r, "platform_data": json.dumps(r["platform_data"], ensure_ascii=False)}
+    existing = _find_existing_post(conn, account_id, r)
     present = [(c, r[c]) for c in _METRIC_COLS if r.get(c) is not None]
+
     if existing:
         sets = ", ".join(f"{c} = ?" for c, _ in present)
         sets = (sets + ", " if sets else "") + "is_anomaly_period = ?"
         conn.execute(
-            f"UPDATE videos SET {sets} WHERE id = ?",
-            [v for _, v in present] + [int(anomaly), existing["id"]],
+            f"UPDATE posts SET {sets} WHERE id = ?",
+            [v for _, v in present] + [int(anomaly), existing],
         )
-        return existing["id"], "updated"
+        return existing, "updated"
 
-    cols = ["platform", "title", "publish_date"] + [c for c, _ in present] + ["is_anomaly_period"]
-    vals = ["douyin", r.get("title"), r.get("publish_date")] + [v for _, v in present] + [int(anomaly)]
+    cols = ["account_id", "platform", "title", "publish_date"] + [c for c, _ in present] \
+        + ["is_anomaly_period"]
+    vals = [account_id, platform, r.get("title"), r.get("publish_date")] \
+        + [v for _, v in present] + [int(anomaly)]
     cur = conn.execute(
-        f"INSERT INTO videos ({','.join(cols)}) VALUES ({','.join('?' * len(vals))})",
-        vals,
+        f"INSERT INTO posts ({','.join(cols)}) VALUES ({','.join('?' * len(vals))})", vals
     )
     return cur.lastrowid, "inserted"
 
 
-@app.post("/api/videos/import")
-async def import_csv(file: UploadFile = File(...)):
+@app.post("/api/posts")
+def add_post(post: PostIn):
+    with get_conn() as conn:
+        account = _resolve_account(conn, post.account_id)
+        data = post.model_dump()
+        data.pop("account_id", None)
+        creative_id = data.pop("creative_id", None)
+        anomaly = post_falls_in_anomaly(conn, account["id"], post.publish_date)
+        if isinstance(data.get("platform_data"), dict):
+            data["platform_data"] = json.dumps(data["platform_data"], ensure_ascii=False)
+        cols = [k for k, v in data.items() if v is not None]
+        cur = conn.execute(
+            f"INSERT INTO posts (account_id, creative_id, platform, is_anomaly_period, "
+            f"{','.join(cols)}) VALUES (?,?,?,?,{','.join('?' * len(cols))})",
+            [account["id"], creative_id, account["platform"], int(anomaly)]
+            + [data[c] for c in cols],
+        )
+        return {"id": cur.lastrowid}
+
+
+@app.post("/api/posts/import")
+async def import_csv(file: UploadFile = File(...), account_id: int | None = None):
     """
-    导入创作者中心 CSV。重复导入不再产生重复行：
-    有视频ID列时按 douyin_video_id 匹配，否则按 (标题, 发布日期) 匹配；
-    命中就只更新数据指标列（不碰手动填的内容画像/备注），没命中才插入。
-    单行解析失败会被跳过并逐行报告，不再整个导入失败。
+    导入创作者中心 CSV。重复导入不会产生重复行：有作品 ID 就按它匹配，
+    否则按 同账号+同发布日期+标题高度相似 匹配。单行解析失败会被跳过并逐行报告。
     """
     content = await file.read()
     try:
@@ -125,8 +250,9 @@ async def import_csv(file: UploadFile = File(...)):
 
     inserted = updated = 0
     with get_conn() as conn:
+        account = _resolve_account(conn, account_id)
         for r in records:
-            _, action = upsert_video(conn, r)
+            _, action = upsert_post(conn, r, account["id"], account["platform"])
             if action == "inserted":
                 inserted += 1
             else:
@@ -134,95 +260,138 @@ async def import_csv(file: UploadFile = File(...)):
     return {"inserted": inserted, "updated": updated, "errors": errors}
 
 
-@app.get("/api/videos")
-def list_videos(limit: int = 50):
+# 注意：这两个字面量路由必须写在 /api/posts/{post_id} 前面，否则会被当成 post_id 去解析。
+@app.get("/api/posts/duplicate-candidates")
+def duplicate_candidates(account_id: int | None = None):
+    """
+    疑似重复的作品分组。只给候选和判断依据，**不自动合并** ——
+    合并是破坏性的，跟截图入库一样必须人点头。
+    """
     with get_conn() as conn:
+        acct = account_id if account_id is not None else get_default_account_id(conn)
+        return find_duplicate_candidates(conn, acct)
+
+
+@app.post("/api/posts/merge")
+def merge_duplicate_posts(payload: MergeIn):
+    """确认合并。底稿取字段最全的那条，其余行的非空值补进来，快照并过来去重。"""
+    with get_conn() as conn:
+        try:
+            return merge_posts(conn, payload.post_ids)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.get("/api/posts")
+def list_posts(account_id: int | None = None, limit: int = 50):
+    with get_conn() as conn:
+        acct = account_id if account_id is not None else get_default_account_id(conn)
         rows = conn.execute(
-            "SELECT * FROM videos ORDER BY publish_date DESC LIMIT ?", (limit,)
+            "SELECT * FROM posts WHERE account_id = ? ORDER BY publish_date DESC LIMIT ?",
+            (acct, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
-@app.get("/api/videos/{video_id}")
-def get_video(video_id: int):
+@app.get("/api/posts/{post_id}")
+def get_post(post_id: int):
+    from app.analysis.context import get_post_with_creative
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
+        post = get_post_with_creative(conn, post_id)
+        if not post:
+            raise HTTPException(404, "post not found")
+        return post
+
+
+@app.delete("/api/posts/{post_id}")
+def delete_post(post_id: int):
+    """删掉一条作品及其从属数据（快照、分析结果）。不可恢复——前端要先 confirm。
+    注意不动 creative：同一个创作物可能还发在别的平台上。"""
+    with get_conn() as conn:
+        if not conn.execute("SELECT 1 FROM posts WHERE id = ?", (post_id,)).fetchone():
+            raise HTTPException(404, "post not found")
+        n_snaps = conn.execute("DELETE FROM post_snapshots WHERE post_id = ?", (post_id,)).rowcount
+        n_results = conn.execute("DELETE FROM analysis_results WHERE post_id = ?", (post_id,)).rowcount
+        conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+    return {"deleted": post_id, "snapshots_removed": n_snaps, "results_removed": n_results}
+
+
+@app.patch("/api/posts/{post_id}/content-profile")
+def update_post_content_profile(post_id: int, profile: CreativePatch):
+    """
+    便捷入口：给这条作品填内容画像。它实际写的是 creative —— 没有就建一个并挂上。
+    一条内容发到多个平台时，改任何一条 post 的画像都是在改同一个 creative。
+    """
+    fields = profile.model_dump(exclude_unset=True)
+    with get_conn() as conn:
+        row = conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
         if not row:
-            raise HTTPException(404, "video not found")
-        return dict(row)
+            raise HTTPException(404, "post not found")
+        post = dict(row)
+        creative_id = post.get("creative_id")
+        if creative_id is None:
+            data = {k: v for k, v in fields.items()}
+            data.setdefault("label", (post.get("title") or "")[:40])
+            data.setdefault("duration_sec", post.get("duration_sec"))
+            creative_id = _insert_creative(conn, data)
+            conn.execute("UPDATE posts SET creative_id = ? WHERE id = ?",
+                         (creative_id, post_id))
+        elif fields:
+            conn.execute(
+                f"UPDATE creatives SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                list(fields.values()) + [creative_id],
+            )
+        return dict(conn.execute("SELECT * FROM creatives WHERE id = ?",
+                                 (creative_id,)).fetchone())
 
 
-@app.delete("/api/videos/{video_id}")
-def delete_video(video_id: int):
-    """删掉一条视频及其从属数据（快照、分析结果）。不可恢复——前端要先 confirm。"""
+# ---------- 时序快照（扩散诊断用）----------
+
+@app.post("/api/posts/{post_id}/snapshots")
+def add_snapshot(post_id: int, snapshot: SnapshotIn):
     with get_conn() as conn:
-        existing = conn.execute("SELECT id FROM videos WHERE id = ?", (video_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "video not found")
-        n_snaps = conn.execute("DELETE FROM video_snapshots WHERE video_id = ?", (video_id,)).rowcount
-        n_results = conn.execute("DELETE FROM analysis_results WHERE video_id = ?", (video_id,)).rowcount
-        conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
-    return {"deleted": video_id, "snapshots_removed": n_snaps, "results_removed": n_results}
-
-
-@app.patch("/api/videos/{video_id}/content-profile")
-def update_content_profile(video_id: int, profile: ContentProfileIn):
-    """
-    内容画像字段创作者中心导不出来，靠手动填。只更新传了值的字段，
-    没传的字段保留原值（用 COALESCE 而不是覆盖成 NULL）。
-    """
-    with get_conn() as conn:
-        existing = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "video not found")
-        conn.execute(
-            """
-            UPDATE videos SET
-                content_summary = COALESCE(?, content_summary),
-                on_screen_text = COALESCE(?, on_screen_text),
-                music = COALESCE(?, music),
-                hook_description = COALESCE(?, hook_description),
-                content_pillar = COALESCE(?, content_pillar)
-            WHERE id = ?
-            """,
-            (
-                profile.content_summary, profile.on_screen_text, profile.music,
-                profile.hook_description, profile.content_pillar, video_id,
-            ),
-        )
-        return dict(conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone())
-
-
-# ---------- 时间快照（流量池定位用） ----------
-
-@app.post("/api/videos/{video_id}/snapshots")
-def add_snapshot(video_id: int, snapshot: SnapshotIn):
-    from datetime import datetime, timezone
-
-    with get_conn() as conn:
-        existing = conn.execute("SELECT id FROM videos WHERE id = ?", (video_id,)).fetchone()
-        if not existing:
-            raise HTTPException(404, "video not found")
+        if not conn.execute("SELECT 1 FROM posts WHERE id = ?", (post_id,)).fetchone():
+            raise HTTPException(404, "post not found")
         checked_at = snapshot.checked_at or datetime.now(timezone.utc).isoformat()
         cur = conn.execute(
-            """
-            INSERT INTO video_snapshots (video_id, checked_at, plays, likes, comments,
-                shares, saves, completion_rate, profile_visits, new_followers)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
-            """,
-            (
-                video_id, checked_at, snapshot.plays, snapshot.likes, snapshot.comments,
-                snapshot.shares, snapshot.saves, snapshot.completion_rate,
-                snapshot.profile_visits, snapshot.new_followers,
-            ),
+            """INSERT INTO post_snapshots (post_id, checked_at, plays, likes, comments,
+                   shares, saves, completion_rate, profile_visits, new_followers,
+                   bounce_2s_rate)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (post_id, checked_at, snapshot.plays, snapshot.likes, snapshot.comments,
+             snapshot.shares, snapshot.saves, snapshot.completion_rate,
+             snapshot.profile_visits, snapshot.new_followers, snapshot.bounce_2s_rate),
         )
         return {"id": cur.lastrowid, "checked_at": checked_at}
 
 
-@app.get("/api/videos/{video_id}/snapshots")
-def list_snapshots(video_id: int):
+@app.get("/api/posts/{post_id}/snapshots")
+def list_snapshots(post_id: int):
     with get_conn() as conn:
-        return get_snapshots(conn, video_id)
+        return get_snapshots(conn, post_id)
+
+
+# ---------- 创作者笔记（助手要懂你，光有数字不够）----------
+
+@app.post("/api/creator-notes")
+def add_creator_note(note: CreatorNoteIn, owner_id: str = "local"):
+    with get_conn() as conn:
+        account_id = note.account_id or get_default_account_id(conn)
+        cur = conn.execute(
+            """INSERT INTO creator_notes (owner_id, account_id, post_id, creative_id, body)
+               VALUES (?,?,?,?,?)""",
+            (owner_id, account_id, note.post_id, note.creative_id, note.body),
+        )
+        return {"id": cur.lastrowid}
+
+
+@app.get("/api/creator-notes")
+def list_creator_notes(account_id: int | None = None, post_id: int | None = None,
+                       limit: int = 50):
+    from app.analysis.context import creator_notes
+    with get_conn() as conn:
+        acct = account_id if account_id is not None else get_default_account_id(conn)
+        return creator_notes(conn, acct, post_id=post_id, limit=limit)
 
 
 # ---------- 异常期 ----------
@@ -231,14 +400,21 @@ def list_snapshots(video_id: int):
 def add_anomaly_period(period: AnomalyPeriodIn):
     with get_conn() as conn:
         cur = conn.execute(
-            "INSERT INTO anomaly_periods (start_date, end_date, reason) VALUES (?,?,?)",
-            (period.start_date, period.end_date, period.reason),
+            "INSERT INTO anomaly_periods (account_id, start_date, end_date, reason) VALUES (?,?,?,?)",
+            (period.account_id, period.start_date, period.end_date, period.reason),
         )
-        # 回填已有视频的 is_anomaly_period 标记
-        conn.execute(
-            "UPDATE videos SET is_anomaly_period = 1 WHERE publish_date BETWEEN ? AND ?",
-            (period.start_date, period.end_date),
-        )
+        # 回填已有作品的 is_anomaly_period 标记
+        if period.account_id is None:
+            conn.execute(
+                "UPDATE posts SET is_anomaly_period = 1 WHERE publish_date BETWEEN ? AND ?",
+                (period.start_date, period.end_date),
+            )
+        else:
+            conn.execute(
+                """UPDATE posts SET is_anomaly_period = 1
+                   WHERE account_id = ? AND publish_date BETWEEN ? AND ?""",
+                (period.account_id, period.start_date, period.end_date),
+            )
         return {"id": cur.lastrowid}
 
 
@@ -251,90 +427,79 @@ def list_anomaly_periods():
 
 # ---------- 分析 ----------
 
-@app.post("/api/analyze/{video_id}/enhancement")
-def run_enhancement(video_id: int):
+@app.get("/api/analyses")
+def get_analyses():
+    """有哪些分析可跑。前端据此渲染 tab；Phase 5 的助手据此把它们当工具列出来。"""
+    return list_analyses()
+
+
+@app.post("/api/analyze/posts/{post_id}/{analysis_type}")
+def run_post_analysis(post_id: int, analysis_type: str):
+    spec = ANALYSES.get(analysis_type)
+    if not spec or spec["scope"] != POST_SCOPE:
+        raise HTTPException(404, f"没有这个单条作品分析：{analysis_type}")
     with get_conn() as conn:
-        video = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
-        if not video:
-            raise HTTPException(404, "video not found")
-        baseline = compute_baseline(conn)
-    return analyze_enhancement(dict(video), baseline)
+        row = conn.execute("SELECT account_id FROM posts WHERE id = ?", (post_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "post not found")
+        account = _resolve_account(conn, row["account_id"])
+        return spec["run"](conn, account, post_id)
 
 
-@app.post("/api/analyze/{video_id}/trend_forecast")
-def run_trend_forecast(video_id: int):
+@app.post("/api/analyze/account/{analysis_type}")
+def run_account_analysis(analysis_type: str, account_id: int | None = None,
+                         limit: int = 20):
+    spec = ANALYSES.get(analysis_type)
+    if not spec or spec["scope"] != ACCOUNT_SCOPE:
+        raise HTTPException(404, f"没有这个账号级分析：{analysis_type}")
     with get_conn() as conn:
-        video = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
-        if not video:
-            raise HTTPException(404, "video not found")
-        baseline = conn.execute(
-            "SELECT * FROM videos WHERE is_anomaly_period = 0 ORDER BY publish_date DESC LIMIT 10"
-        ).fetchall()
-    return analyze_trend_forecast(dict(video), [dict(r) for r in baseline])
-
-
-@app.post("/api/analyze/content_ideas")
-def run_content_ideas(limit: int = 15):
-    with get_conn() as conn:
-        recent = conn.execute(
-            "SELECT * FROM videos WHERE is_anomaly_period = 0 ORDER BY publish_date DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        baseline = compute_baseline(conn)
-    return analyze_content_ideas([dict(r) for r in recent], baseline)
-
-
-@app.post("/api/analyze/{video_id}/pool_diagnosis")
-def run_pool_diagnosis(video_id: int):
-    with get_conn() as conn:
-        video = conn.execute("SELECT * FROM videos WHERE id = ?", (video_id,)).fetchone()
-        if not video:
-            raise HTTPException(404, "video not found")
-        snapshots = get_snapshots(conn, video_id)
-        baseline = compute_baseline(conn)
-    return analyze_pool_tier(dict(video), snapshots, baseline)
-
-
-@app.post("/api/analyze/creator_profile")
-def run_creator_profile(limit: int = 20):
-    with get_conn() as conn:
-        recent = conn.execute(
-            "SELECT * FROM videos WHERE is_anomaly_period = 0 ORDER BY publish_date DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    return analyze_creator_profile([dict(r) for r in recent])
+        account = _resolve_account(conn, account_id)
+        return spec["run"](conn, account, limit)
 
 
 @app.get("/api/analyze/results")
-def get_results(video_id: int | None = None, analysis_type: str | None = None):
+def get_results(post_id: int | None = None, account_id: int | None = None,
+                analysis_type: str | None = None):
     query = "SELECT * FROM analysis_results WHERE 1=1"
-    params = []
-    if video_id is not None:
-        query += " AND video_id = ?"
-        params.append(video_id)
+    params: list = []
+    if post_id is not None:
+        query += " AND post_id = ?"
+        params.append(post_id)
+    if account_id is not None:
+        query += " AND account_id = ?"
+        params.append(account_id)
     if analysis_type is not None:
         query += " AND analysis_type = ?"
         params.append(analysis_type)
     query += " ORDER BY created_at DESC"
     with get_conn() as conn:
-        rows = conn.execute(query, params).fetchall()
         out = []
-        for r in rows:
+        for r in conn.execute(query, params).fetchall():
             d = dict(r)
             d["result_json"] = json.loads(d["result_json"])
             out.append(d)
         return out
 
 
-@app.get("/api/trend-data")
-def trend_data():
-    """给首页趋势图用：按发布日期排序的关键指标 + 异常期标记"""
+@app.get("/api/baseline")
+def get_baseline(account_id: int | None = None):
+    """账号基线（同账号、非异常期均值），给前端指标面板算 Δ 用。"""
     with get_conn() as conn:
+        account = _resolve_account(conn, account_id)
+        return compute_baseline(conn, account["id"])
+
+
+@app.get("/api/trend-data")
+def trend_data(account_id: int | None = None):
+    """首页趋势图：按发布日期排序的关键指标 + 异常期标记"""
+    with get_conn() as conn:
+        acct = account_id if account_id is not None else get_default_account_id(conn)
         rows = conn.execute(
             """SELECT publish_date, title, plays, completion_rate,
                       CAST(saves AS FLOAT) / NULLIF(plays, 0) as save_rate,
                       new_followers, is_anomaly_period
-               FROM videos ORDER BY publish_date ASC"""
+               FROM posts WHERE account_id = ? ORDER BY publish_date ASC""",
+            (acct,),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -343,10 +508,7 @@ def trend_data():
 
 @app.post("/api/vision/extract")
 async def vision_extract(file: UploadFile = File(...)):
-    """
-    一张创作者中心截图 → 结构化草稿。只提取、不入库——数字必须经人确认。
-    失败时返回 {_api_error, retryable} 信封，前端可重试。
-    """
+    """一张创作者中心截图 → 结构化草稿。只提取、不入库——数字必须经人确认。"""
     content = await file.read()
     try:
         return extract_screenshot(content, file.content_type)
@@ -358,24 +520,22 @@ async def vision_extract(file: UploadFile = File(...)):
 def vision_save(payload: VisionSaveIn):
     """
     确认面板提交的最终数据入库：
-    - videos 逐条 upsert（私密条目服务端直接拒绝——别人看不到的数据不作数）
-    - 详情页（video_detail）同时给该视频记一条快照（source='vision'，带曲线观察）
-    - account 落 account_metrics
+    - posts 逐条 upsert（私密条目服务端直接拒绝——别人看不到的数据不作数）
+    - 详情页同时给该作品记一条快照（source='vision'，带曲线观察）
+    - 账号级数据落 account_metrics
     """
-    from datetime import datetime, timezone
-
     saved, updated, skipped_private, snapshots = 0, 0, 0, 0
     with get_conn() as conn:
+        account = _resolve_account(conn, payload.account_id)
         for v in payload.videos:
             if v.status == "私密":
                 skipped_private += 1
                 continue
             if not v.title or not v.publish_datetime:
                 continue  # 没有身份键没法 upsert，前端会要求补全
-            publish_date = v.publish_datetime[:10]
             record = v.model_dump(exclude={"status", "publish_datetime"})
-            record["publish_date"] = publish_date
-            vid, action = upsert_video(conn, record)
+            record["publish_date"] = v.publish_datetime[:10]
+            pid, action = upsert_post(conn, record, account["id"], account["platform"])
             if action == "inserted":
                 saved += 1
             else:
@@ -390,11 +550,11 @@ def vision_save(payload: VisionSaveIn):
                                   f"{co.shape_description or ''}"
                                   f"（形态初判：{co.pattern_guess or '无'}）")
                 conn.execute(
-                    """INSERT INTO video_snapshots
-                       (video_id, checked_at, plays, likes, comments, shares, saves,
+                    """INSERT INTO post_snapshots
+                       (post_id, checked_at, plays, likes, comments, shares, saves,
                         completion_rate, new_followers, bounce_2s_rate, source, curve_note)
                        VALUES (?,?,?,?,?,?,?,?,?,?,'vision',?)""",
-                    (vid, checked_at, v.plays, v.likes, v.comments, v.shares, v.saves,
+                    (pid, checked_at, v.plays, v.likes, v.comments, v.shares, v.saves,
                      v.completion_rate, v.new_followers, v.bounce_2s_rate, curve_note),
                 )
                 snapshots += 1
@@ -403,11 +563,12 @@ def vision_save(payload: VisionSaveIn):
             a = payload.account
             conn.execute(
                 """INSERT INTO account_metrics
-                   (captured_at, period, plays, profile_visits, likes, comments, shares,
-                    net_followers, unfollows, completion_rate, search_views, cover_ctr,
-                    danmaku, peer_percentiles, raw_json, source)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'vision')""",
+                   (account_id, captured_at, period, plays, profile_visits, likes,
+                    comments, shares, net_followers, unfollows, completion_rate,
+                    search_views, cover_ctr, danmaku, peer_percentiles, raw_json, source)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'vision')""",
                 (
+                    account["id"],
                     payload.checked_at or datetime.now(timezone.utc).isoformat(),
                     a.period, a.plays, a.profile_visits, a.likes, a.comments, a.shares,
                     a.net_followers, a.unfollows, a.completion_rate, a.search_views,
@@ -423,30 +584,25 @@ def vision_save(payload: VisionSaveIn):
 
 
 @app.get("/api/account-metrics")
-def list_account_metrics(limit: int = 30):
+def list_account_metrics(account_id: int | None = None, limit: int = 30):
     with get_conn() as conn:
+        acct = account_id if account_id is not None else get_default_account_id(conn)
         rows = conn.execute(
-            "SELECT * FROM account_metrics ORDER BY captured_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM account_metrics WHERE account_id = ? ORDER BY captured_at DESC LIMIT ?",
+            (acct, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
 # ---------- 报告导出 ----------
 
-@app.get("/api/baseline")
-def get_baseline():
-    """账号基线（非异常期均值），给前端指标面板算 Δ 用。"""
-    with get_conn() as conn:
-        return compute_baseline(conn)
-
-
 @app.get("/api/report", response_class=HTMLResponse)
-def get_report(download: int = 0):
-    """生成自包含的账号级 HTML 报告（只用已缓存的分析结果，不触发 API 调用）。
-    加 ?download=1 时作为附件下载成单个 .html 文件。"""
-    from datetime import datetime
+def get_report(account_id: int | None = None, download: int = 0):
+    """自包含的账号级 HTML 报告（只用已缓存的分析结果，不触发 API 调用）。
+    加 ?download=1 作为附件下载成单个 .html 文件。"""
     with get_conn() as conn:
-        report_html = build_report_html(conn)
+        account = _resolve_account(conn, account_id)
+        report_html = build_report_html(conn, account)
     headers = {}
     if download:
         fname = f"shiome_report_{datetime.now():%Y-%m-%d}.html"

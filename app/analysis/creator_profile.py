@@ -1,30 +1,34 @@
 """
 维度五：内容创作者画像。
 
-跟 content_ideas.py 的分工：content_ideas 回答"接下来该做什么新内容"，是往前看
-的选题建议，靠的是表现数据（哪类内容表现好）；creator_profile 回答"现在实际
-在做什么、矩阵结构怎么样"，是照镜子看现状的审计，不给新选题，只描述现状、
-评估矩阵结构是否健康。两个可以互相当输入喂数据，但职责不重叠。
+跟 content_ideas 的分工：content_ideas 回答「接下来该做什么新内容」（往前看）；
+这里回答「现在实际在做什么、矩阵结构怎么样」（照镜子看现状），不给新选题。
 
-前提：需要 videos 表里的内容画像字段打底（content_summary / on_screen_text /
-music / hook_description / content_pillar）。这些字段创作者中心导不出来，
-只能手动录入——网页表单或者你自己维护一份 md 都行，最终要落到这几个字段里。
+v2 变化：读的是 creatives 而不是 posts。一条视频发三个平台，它的钩子/画面文字/配乐
+只有一份 —— 内容审计当然应该按创作物来看，否则同一条内容会被数三遍，
+矩阵占比会被平台数量放大成假象。
 """
-from app.analysis.prompts import PERSONA_CONTEXT, call_claude_json, save_result
+from app.analysis.prompts import (
+    build_account_context, get_mechanism_context, call_claude_json, save_result,
+)
 
-SYSTEM_PROMPT = f"""
+
+def build_system_prompt(platform: str, account: dict | None) -> str:
+    return f"""
 你是一个内容审计分析师，只负责一件事：
-根据最近一批视频的内容描述（不是播放数据本身），总结创作者现在实际在做什么，
+根据最近一批创作物的内容描述（不是播放数据本身），总结创作者现在实际在做什么，
 并评估内容矩阵结构是否健康。
 
-{PERSONA_CONTEXT}
+{build_account_context(account)}
+
+{get_mechanism_context(platform)}
 
 要求：
-- 只基于给你的内容描述字段做归纳，缺内容描述的视频直接跳过，不要编造。
-- 矩阵评估要围绕账号的实际目标展开：内容是信任建立的第一步，最终要转化成
-  咨询服务的客户。判断现在的内容里，"建立专业感/信任"类和"转化触发"类
-  （比如引导私信、引导进群）的比例是否合理，而不是单纯看内容够不够多元、
-  够不够好玩。
+- 只基于给你的内容描述字段做归纳，缺内容描述的直接跳过，不要编造。
+- 矩阵评估要围绕这个账号自己的目标展开（见上面的账号上下文）：
+  判断「建立专业感/信任」类和「转化触发」类内容的比例是否合理，
+  而不是单纯看内容够不够多元、够不够好玩。
+  如果账号没有填写人设和目标，就说明缺这个信息、只做描述性归纳，不下矩阵健康的结论。
 """
 
 
@@ -46,15 +50,17 @@ OUTPUT_SCHEMA = {
 }
 
 
-def analyze_creator_profile(recent_videos: list[dict]) -> dict:
-    profiled = [
-        v for v in recent_videos
-        if v.get("content_summary") or v.get("hook_description")
-    ]
+def analyze_creator_profile(creatives: list[dict], account: dict | None,
+                            total_considered: int | None = None) -> dict:
+    platform = (account or {}).get("platform", "douyin")
+    total = total_considered if total_considered is not None else len(creatives)
     user_content = f"""
-最近一批视频里，共 {len(profiled)} 条有内容画像数据（总共取了 {len(recent_videos)} 条视频）：
-{profiled}
+最近这批创作物里，共 {len(creatives)} 条填了内容画像（一共看了 {total} 条）：
+{creatives}
+
+注意：这是按「创作物」而不是按「发布」列出的 —— 同一条内容发到多个平台只出现一次。
 """
-    result = call_claude_json(SYSTEM_PROMPT, user_content, schema=OUTPUT_SCHEMA)
-    save_result(None, "creator_profile", result)
+    result = call_claude_json(build_system_prompt(platform, account),
+                              user_content, schema=OUTPUT_SCHEMA)
+    save_result("creator_profile", result, account_id=(account or {}).get("id"))
     return result

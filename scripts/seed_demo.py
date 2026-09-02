@@ -6,7 +6,7 @@ DEMO 数据播种脚本 —— 仅供本地压测，不要用于真实数据。
 
 安全保护：没设 SHIOME_DB_PATH 时直接拒绝执行，避免误写真实库。
 
-它会（在测试库里）：建表 → 清空旧数据 → 插 1 个异常期 → 插 5 条抖音 demo 视频
+它会（在测试库里）：建表 → 清空旧数据 → 建 1 个 demo 账号 → 插 1 个异常期 → 插 5 条 demo 作品
 （其中 2 条带内容画像字段，1 条落在异常期）→ 给"体态反差"那条挂 3 个台阶式爬升快照。
 5 条视频刻意覆盖不同形态：健康爬升 / 高播放低意向(泛量) / 异常期冻结 / 中等 / 自然衰减。
 """
@@ -19,17 +19,21 @@ if not os.environ.get("SHIOME_DB_PATH"):
         "例：SHIOME_DB_PATH=test_output/2026-07-02_Test.db python -m scripts.seed_demo"
     )
 
-from app.database import init_db, get_conn, video_falls_in_anomaly, DB_PATH
+from app.database import init_db, get_conn, post_falls_in_anomaly, DB_PATH
 
 DEMO_ANOMALY = ("2026-05-01", "2026-05-07", "DEMO：新号 IP+地理标签触发限流")
 
-# 视频字段（platform 固定 douyin）。content_* 字段只有部分视频填，模拟真实录入情况。
-VIDEO_COLS = [
-    "platform", "title", "publish_date", "duration_sec", "plays", "likes", "comments",
+# 发布侧字段（平台量出来的数字）
+POST_COLS = [
+    "title", "publish_date", "duration_sec", "plays", "likes", "comments",
     "shares", "saves", "completion_rate", "avg_watch_time", "profile_visits",
     "new_followers", "high_intent_comments", "high_intent_dms",
-    "content_summary", "on_screen_text", "music", "hook_description", "content_pillar",
 ]
+# 创作侧字段（你做的那个东西）。只有部分视频填，模拟真实录入情况。
+CREATIVE_COLS = ["content_summary", "on_screen_text", "music",
+                 "hook_description", "content_pillar"]
+
+DEMO_PERSONA = "DEMO 人设：面向小众高意向人群的生活方式顾问，精准触达优先于泛量增长。"
 
 DEMO_VIDEOS = [
     # 1) 健康爬升 + 高精准信号（下面挂快照的就是这条）
@@ -92,40 +96,60 @@ def main():
     init_db()
     with get_conn() as conn:
         # 测试库是一次性的：清空后重播，保证可重复运行
-        for t in ("video_snapshots", "analysis_results", "videos", "anomaly_periods"):
+        for t in ("post_snapshots", "analysis_results", "posts", "creatives",
+                  "anomaly_periods", "creator_notes", "account_metrics", "accounts"):
             conn.execute(f"DELETE FROM {t}")
+
+        cur = conn.execute(
+            """INSERT INTO accounts (owner_id, platform, display_name, persona, goal_note)
+               VALUES ('local', 'douyin', 'DEMO 账号', ?, '高意向咨询数 > 粉丝数')""",
+            (DEMO_PERSONA,),
+        )
+        account_id = cur.lastrowid
 
         conn.execute(
             "INSERT INTO anomaly_periods (start_date, end_date, reason) VALUES (?,?,?)",
             DEMO_ANOMALY,
         )
 
-        placeholders = ",".join(["?"] * (len(VIDEO_COLS) + 1))  # +1 = is_anomaly_period
-        sql = (
-            f"INSERT INTO videos ({','.join(VIDEO_COLS)}, is_anomaly_period) "
-            f"VALUES ({placeholders})"
-        )
-        first_video_id = None
+        first_post_id = None
+        n_creatives = 0
         for v in DEMO_VIDEOS:
-            anomaly = video_falls_in_anomaly(conn, v["publish_date"])
-            values = tuple(v.get(c) for c in VIDEO_COLS) + (int(anomaly),)
-            cur = conn.execute(sql, values)
-            if first_video_id is None:
-                first_video_id = cur.lastrowid
+            # 内容画像去 creatives（发多个平台只描述一次），数据去 posts
+            creative_id = None
+            if any(v.get(c) for c in CREATIVE_COLS):
+                cols = [c for c in CREATIVE_COLS if v.get(c)]
+                creative_id = conn.execute(
+                    f"INSERT INTO creatives (owner_id, label, duration_sec, {','.join(cols)}) "
+                    f"VALUES ('local', ?, ?, {','.join('?' * len(cols))})",
+                    [v["title"][:40], v.get("duration_sec")] + [v[c] for c in cols],
+                ).lastrowid
+                n_creatives += 1
+
+            anomaly = post_falls_in_anomaly(conn, account_id, v["publish_date"])
+            cur = conn.execute(
+                f"INSERT INTO posts (account_id, creative_id, platform, is_anomaly_period, "
+                f"{','.join(POST_COLS)}) "
+                f"VALUES (?,?,'douyin',?,{','.join('?' * len(POST_COLS))})",
+                [account_id, creative_id, int(anomaly)] + [v.get(c) for c in POST_COLS],
+            )
+            if first_post_id is None:
+                first_post_id = cur.lastrowid
 
         for snap in DEMO_SNAPSHOTS:
             conn.execute(
-                """INSERT INTO video_snapshots
-                   (video_id, checked_at, plays, likes, comments, shares, saves,
+                """INSERT INTO post_snapshots
+                   (post_id, checked_at, plays, likes, comments, shares, saves,
                     completion_rate, profile_visits, new_followers)
                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                (first_video_id, *snap),
+                (first_post_id, *snap),
             )
 
     print(f"✅ DEMO 数据已写入 {DB_PATH}")
-    print(f"   - {len(DEMO_VIDEOS)} 条视频（video_id 从 {first_video_id} 起）")
+    print(f"   - 1 个账号（account_id={account_id}，带 DEMO 人设）")
+    print(f"   - {len(DEMO_VIDEOS)} 条作品（post_id 从 {first_post_id} 起），其中 {n_creatives} 条有内容画像")
     print(f"   - 1 个异常期 {DEMO_ANOMALY[0]}~{DEMO_ANOMALY[1]}")
-    print(f"   - {len(DEMO_SNAPSHOTS)} 个快照挂在 video_id={first_video_id}（体态反差那条，用来测扩散诊断）")
+    print(f"   - {len(DEMO_SNAPSHOTS)} 个快照挂在 post_id={first_post_id}（体态反差那条，用来测扩散诊断）")
 
 
 if __name__ == "__main__":
