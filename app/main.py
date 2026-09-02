@@ -12,20 +12,24 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
 
 from app import __version__
+from app.auth import (
+    AuthConfig, LoginThrottle, SESSION_COOKIE, is_loopback, make_session,
+    read_session, verify_password,
+)
 from app.database import (
     init_db, get_conn, post_falls_in_anomaly, get_snapshots, backup_db,
     get_default_account_id,
 )
 from app.models import (
     PostIn, AccountIn, AccountPatch, CreativeIn, CreativePatch,
-    AnomalyPeriodIn, SnapshotIn, VisionSaveIn, MergeIn, CreatorNoteIn,
+    AnomalyPeriodIn, SnapshotIn, VisionSaveIn, MergeIn, CreatorNoteIn, LoginIn,
 )
 from app.dedupe import find_duplicate_candidates, merge_posts, title_similarity, \
     TITLE_SIMILARITY_THRESHOLD
@@ -36,15 +40,122 @@ from app.analysis.registry import ANALYSES, list_analyses, POST_SCOPE, ACCOUNT_S
 from app.report import build_report_html
 
 
+AUTH = AuthConfig()
+THROTTLE = LoginThrottle()
+
+# 不需要登录就能访问的路径。刻意列得很短：
+# 登录页本身、登录接口、问「我登录了吗」、以及版本号（排查问题时要能拿到）。
+PUBLIC_PATHS = {"/login", "/api/auth/login", "/api/auth/status", "/api/version",
+                "/favicon.ico"}
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()          # 建表 + 跑结构迁移（v1→v2 会自己先备份）
     backup_db()        # 每天首启快照一份，防云同步弄坏唯一的手录数据
+    if not AUTH.configured:
+        print("[shiome] 未配置鉴权：只接受来自本机的请求。"
+              "要放到公网上，先设 SHIOME_PASSWORD_HASH（用 python -m scripts.set_password 生成）。")
+    elif AUTH.secret_derived:
+        print("[shiome] 提示：没设 SHIOME_SECRET_KEY，会话密钥从口令哈希派生。"
+              "改口令会让所有人重新登录一次。")
     yield
 
 
 app = FastAPI(title="潮目 Shiome", version=__version__, lifespan=lifespan)
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _client_key(request: Request) -> str:
+    return (request.client.host if request.client else "") or "unknown"
+
+
+def _authenticated_owner(request: Request) -> str | None:
+    """Bearer token（脚本/手机快捷指令）优先，其次是浏览器的签名 cookie。"""
+    header = request.headers.get("authorization", "")
+    if AUTH.api_token and header.lower().startswith("bearer "):
+        import hmac as _hmac
+        if _hmac.compare_digest(header[7:].strip(), AUTH.api_token):
+            return AUTH.owner_id
+    session = read_session(request.cookies.get(SESSION_COOKIE), AUTH.secret)
+    return session.get("sub") if session else None
+
+
+@app.middleware("http")
+async def require_auth(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/static/") or path in PUBLIC_PATHS:
+        return await call_next(request)
+
+    if not AUTH.configured:
+        # 没配鉴权 = 只给本机用。不是「先跑起来再说」的宽松默认，
+        # 而是让「忘了配就上公网」这条路直接走不通。
+        if is_loopback(_client_key(request)):
+            request.state.owner_id = AUTH.owner_id
+            return await call_next(request)
+        return JSONResponse(
+            {"detail": "这个实例还没有配置鉴权，因此只接受本机访问。"
+                       "要远程使用，先设置 SHIOME_PASSWORD_HASH。"},
+            status_code=403,
+        )
+
+    owner = _authenticated_owner(request)
+    if owner is None:
+        if "text/html" in request.headers.get("accept", ""):
+            return RedirectResponse("/login", status_code=303)
+        return JSONResponse({"detail": "需要登录"}, status_code=401)
+
+    request.state.owner_id = owner
+    return await call_next(request)
+
+
+# ---------- 登录 ----------
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page():
+    return FileResponse(STATIC_DIR / "login.html")
+
+
+@app.post("/api/auth/login")
+def login(payload: LoginIn, request: Request, response: Response):
+    """口令换一个签名 cookie。失败按来源 IP 限速，挡在线暴力猜口令。"""
+    if not AUTH.configured:
+        raise HTTPException(400, "这个实例没有配置口令，本机访问无需登录。")
+    key = _client_key(request)
+    if not THROTTLE.check(key):
+        raise HTTPException(429, "登录尝试过于频繁，请过一会儿再试。")
+    if not AUTH.password_hash or not verify_password(payload.password, AUTH.password_hash):
+        THROTTLE.record_failure(key)
+        raise HTTPException(401, "口令不对。")
+    THROTTLE.reset(key)
+    token = make_session(AUTH.owner_id, AUTH.secret, AUTH.session_days)
+    response.set_cookie(
+        SESSION_COOKIE, token, max_age=AUTH.session_days * 86400,
+        httponly=True, samesite="lax", secure=request.url.scheme == "https",
+    )
+    return {"ok": True, "owner_id": AUTH.owner_id}
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(SESSION_COOKIE)
+    return {"ok": True}
+
+
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    """前端据此决定显不显示登录框。不泄露口令是否设置之外的任何信息。"""
+    return {
+        "configured": AUTH.configured,
+        "authenticated": _authenticated_owner(request) is not None
+        or (not AUTH.configured and is_loopback(_client_key(request))),
+    }
+
+
+@app.get("/api/version")
+def get_version_public():
+    """公开：排查问题时不用先登录才能知道对面跑的是哪一版。"""
+    return {"version": __version__}
 
 
 def _resolve_account(conn, account_id: int | None) -> dict:
@@ -55,12 +166,6 @@ def _resolve_account(conn, account_id: int | None) -> dict:
     if not account:
         raise HTTPException(404, "account not found（还没有账号，先 POST /api/accounts）")
     return account
-
-
-@app.get("/api/version")
-def get_version():
-    """跑的是哪一版。前端在页脚显示，排查问题时不用猜。"""
-    return {"version": __version__}
 
 
 # ---------- 账号 ----------

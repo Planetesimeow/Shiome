@@ -632,8 +632,25 @@ function discardVisionDraft(cardId) {
   if (!panel.children.length) panel.style.display = "none";
 }
 
+// ---------- 鉴权 ----------
+
+// 只在服务端确实配了口令时才显示退出按钮：本机跑的时候没有登录这回事，
+// 摆一个点了没反应的按钮只会让人困惑。
+async function initAuth() {
+  try {
+    const s = await api("/api/auth/status");
+    if (s.configured) document.getElementById("logout-btn").style.display = "";
+  } catch (e) { /* 拿不到就当没配 */ }
+}
+
+async function logout() {
+  await api("/api/auth/logout", { method: "POST" });
+  window.location.href = "/login";
+}
+
 // ---------- 初始化 ----------
 
+initAuth();
 loadVideos();
 loadTrendChart();
 loadHeroBaseline();
