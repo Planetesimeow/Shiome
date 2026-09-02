@@ -109,6 +109,7 @@ The "why it's built this way" reasoning — separated analyses, honesty about tr
 
 Where it's going next, and why: **[docs/roadmap-v2.md](docs/roadmap-v2.md)**.
 What changed and what it meant, written as it happened: **[docs/devlog/](docs/devlog/)**.
+How branches, releases and version codes work: **[docs/workflow.md](docs/workflow.md)**.
 
 ### Changelog
 
@@ -218,6 +219,7 @@ pytest
 
 接下来往哪走、为什么：**[docs/roadmap-v2.md](docs/roadmap-v2.md)**。
 每一步改了什么、意味着什么（边做边写）：**[docs/devlog/](docs/devlog/)**。
+分支、发布与版本号怎么走：**[docs/workflow.md](docs/workflow.md)**。
 
 ### 更新记录
 

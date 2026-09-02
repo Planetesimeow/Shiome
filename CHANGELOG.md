@@ -14,6 +14,10 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+_Phase 1 · hosting — nothing merged yet._
+
+### [0.2.0] — 2026-09-02
+
 **Breaking**
 - The `videos` table and every `/api/videos*` route are gone. A creative (what you made)
   and a post (that creative published to one platform) are now separate: `accounts` /
@@ -96,8 +100,6 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [0.1.0] — 2026-07-02
 
-### [0.1.0] — 2026-07-02
-
 Initial public release of the runnable skeleton.
 
 **Added**
@@ -115,6 +117,10 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+_Phase 1 · 上云 —— 还没有合入的改动。_
+
+### [0.2.0] — 2026-09-02
 
 **破坏性变更**
 - `videos` 表和所有 `/api/videos*` 路由都没有了。creative（你做的东西）和 post（那个创作物
@@ -193,8 +199,6 @@ Initial public release of the runnable skeleton.
 
 ### [0.1.0] — 2026-07-02
 
-### [0.1.0] — 2026-07-02
-
 可运行骨架的首个公开版本。
 
 **新增**
@@ -208,5 +212,6 @@ Initial public release of the runnable skeleton.
 
 ---
 
-[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/Planetesimeow/Shiome/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v.0.2.0...HEAD
+[0.2.0]: https://github.com/Planetesimeow/Shiome/compare/v.0.1.0...v.0.2.0
+[0.1.0]: https://github.com/Planetesimeow/Shiome/releases/tag/v.0.1.0

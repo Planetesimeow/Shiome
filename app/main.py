@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from contextlib import asynccontextmanager
 
+from app import __version__
 from app.database import (
     init_db, get_conn, post_falls_in_anomaly, get_snapshots, backup_db,
     get_default_account_id,
@@ -42,7 +43,7 @@ async def lifespan(_app: FastAPI):
     yield
 
 
-app = FastAPI(title="潮目 Shiome", lifespan=lifespan)
+app = FastAPI(title="潮目 Shiome", version=__version__, lifespan=lifespan)
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -54,6 +55,12 @@ def _resolve_account(conn, account_id: int | None) -> dict:
     if not account:
         raise HTTPException(404, "account not found（还没有账号，先 POST /api/accounts）")
     return account
+
+
+@app.get("/api/version")
+def get_version():
+    """跑的是哪一版。前端在页脚显示，排查问题时不用猜。"""
+    return {"version": __version__}
 
 
 # ---------- 账号 ----------
