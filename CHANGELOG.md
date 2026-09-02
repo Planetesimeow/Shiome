@@ -14,7 +14,28 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
-_Phase 1 · hosting — nothing merged yet._
+### [0.3.0-dev.2] — 2026-09-02
+
+**Added**
+- API spend ledger (`api_usage`) and an optional monthly budget cap. `GET /api/usage`
+  reports the month's spend, remaining budget and a per-model breakdown; the dashboard
+  header shows the running total.
+- The cap is checked **before** a call is made, not after — discovering an overrun
+  afterwards means the money is already spent. Analyses and screenshot extraction are
+  both gated.
+
+**Notes**
+- Spend is tracked in its own table rather than summed from `analysis_results`, because
+  screenshot extraction never lands there — it produces a draft, not a conclusion — and it
+  is likely the larger cost, sending an image on every call. Summing only analyses would
+  have hidden the biggest line on the bill.
+- Calls whose model we have no price for (the optional Gemini extraction route) are
+  recorded with a null cost and reported as `unpriced_calls`, never silently as $0. An
+  invented cost is worse than a missing one because it looks trustworthy.
+- Prices are a dated snapshot in `app/pricing.py` and can be overridden per model with
+  `SHIOME_PRICE_*` when they change, without editing code.
+- No cap by default. Spend is always tracked and visible; a surprise refusal is worse than
+  an overrun for a personal tool. The deploy docs will recommend setting one.
 
 ### [0.2.0] — 2026-09-02
 
@@ -118,7 +139,24 @@ Initial public release of the runnable skeleton.
 
 ### [未发布]
 
-_Phase 1 · 上云 —— 还没有合入的改动。_
+### [0.3.0-dev.2] — 2026-09-02
+
+**新增**
+- API 花销账本（`api_usage`）和可选的每月预算上限。`GET /api/usage` 返回本月花销、
+  剩余额度和按模型的分解；dashboard 头部显示累计金额。
+- 上限在**发起调用之前**检查，而不是之后 —— 事后才发现超支，钱已经花掉了。
+  分析和截图提取都会被挡。
+
+**说明**
+- 花销单独建表，而不是从 `analysis_results` 里加总：截图提取根本不落那张表
+  （它产出的是待确认草稿，不是分析结论），而它每次要传一张图，很可能才是大头。
+  只统计分析的话，账单上最大的一块是看不见的。
+- 我们没有价目的模型（可选的 Gemini 提取路线）成本记 NULL，并作为 `unpriced_calls`
+  如实报出来，绝不悄悄按 0 元算 —— 编出来的成本比缺失的成本更糟，因为它看起来可信。
+- 价目表是 `app/pricing.py` 里带日期的快照，过期时可以用 `SHIOME_PRICE_*`
+  按模型覆盖，不用改代码。
+- 默认不设上限。花销永远统计、永远可见；对一个自用工具来说，突然被拒绝比超支更让人困惑。
+  部署文档里会建议设一个。
 
 ### [0.2.0] — 2026-09-02
 
