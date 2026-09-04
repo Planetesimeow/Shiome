@@ -43,7 +43,7 @@ A version is stated on **every** PR, in the PR title and in `app/__init__.py`.
 |---|---|---|
 | Phase | one minor version | Phase 0 → `0.2.0`, Phase 1 → `0.3.0` |
 | Feature PR into a release branch | pre-release counter on the phase's version | `0.3.0-dev.1`, `0.3.0-dev.2` |
-| Release branch into `main` | the phase version, suffix dropped, then tagged | `0.3.0` → tag `v.0.3.0` |
+| Release branch into `main` | the phase version, suffix dropped, then tagged | `0.3.0` → tag `v0.3.0` |
 
 Semantic versioning, with the pre-1.0 caveat that breaking changes bump the **minor**
 rather than the major — which is what a phase is, so the two line up naturally.
@@ -57,8 +57,9 @@ Every PR therefore does three things:
 `tests/test_version.py` fails if the constant and the newest changelog heading disagree,
 so the two cannot drift apart quietly.
 
-Tags carry a dot after the `v` — `v.0.1.0`, `v.0.2.0` — matching the tag already on the
-repository. Only `main` is tagged.
+Tags are `v` followed directly by the version — `v0.1.0`, `v0.2.0`, `v0.3.0`. Only `main`
+is tagged. (The repository's first tag was written `v.0.1.0`, with a dot; both existing
+tags were renamed to the standard form on 2026-09-02, pointing at the same commits.)
 
 ### Why this shape
 
@@ -106,7 +107,7 @@ main                        永远可发布；这里的每个提交都是一个�
 |---|---|---|
 | 一个阶段 | 一个小版本 | Phase 0 → `0.2.0`，Phase 1 → `0.3.0` |
 | feature PR 合进 release 分支 | 该阶段版本的预发布计数 | `0.3.0-dev.1`、`0.3.0-dev.2` |
-| release 分支合进 `main` | 去掉后缀的阶段版本，然后打 tag | `0.3.0` → tag `v.0.3.0` |
+| release 分支合进 `main` | 去掉后缀的阶段版本，然后打 tag | `0.3.0` → tag `v0.3.0` |
 
 遵循语义化版本，但有一个 1.0 之前的约定：破坏性变更升**小版本**而不是大版本 ——
 而一个阶段恰好就是这个量级，所以两者天然对齐。
@@ -120,7 +121,9 @@ main                        永远可发布；这里的每个提交都是一个�
 `tests/test_version.py` 会在常量和最新的 changelog 标题不一致时报错，
 所以这两处不会悄悄跑偏。
 
-tag 在 `v` 后面带一个点 —— `v.0.1.0`、`v.0.2.0`，跟仓库上已有的 tag 保持一致。只给 `main` 打 tag。
+tag 是 `v` 直接跟版本号 —— `v0.1.0`、`v0.2.0`、`v0.3.0`。只给 `main` 打 tag。
+（仓库最早的一个 tag 写成了带点的 `v.0.1.0`；2026-09-02 把已有的两个 tag 都改成了标准写法，
+指向的提交不变。）
 
 ### 为什么改成这样
 

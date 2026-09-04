@@ -16,6 +16,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 _Phase 1 · hosting — nothing merged yet._
 
+### [0.2.1] — 2026-09-02
+
+**Changed**
+- Git tags normalised to the standard `v0.2.0` form. The repository's first tag was
+  written `v.0.1.0`, with a dot after the `v`, and the convention had been documented to
+  match it. Both existing tags were renamed in place — same commits, and `v0.2.0` keeps
+  its original annotation and date. Changelog compare links and `docs/workflow.md` now
+  describe the standard form.
+
 ### [0.2.0] — 2026-09-02
 
 **Breaking**
@@ -120,6 +129,13 @@ Initial public release of the runnable skeleton.
 
 _Phase 1 · 上云 —— 还没有合入的改动。_
 
+### [0.2.1] — 2026-09-02
+
+**变更**
+- git tag 统一成标准写法 `v0.2.0`。仓库最早那个 tag 写成了 `v.0.1.0`（`v` 后面带一个点），
+  之前的约定是照着它写的。现在把已有的两个 tag 都改了名 —— 指向的提交不变，
+  `v0.2.0` 保留原来的注释和日期。CHANGELOG 的对比链接和 `docs/workflow.md` 一并改成标准写法。
+
 ### [0.2.0] — 2026-09-02
 
 **破坏性变更**
@@ -212,6 +228,7 @@ _Phase 1 · 上云 —— 还没有合入的改动。_
 
 ---
 
-[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v.0.2.0...HEAD
-[0.2.0]: https://github.com/Planetesimeow/Shiome/compare/v.0.1.0...v.0.2.0
-[0.1.0]: https://github.com/Planetesimeow/Shiome/releases/tag/v.0.1.0
+[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Planetesimeow/Shiome/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Planetesimeow/Shiome/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/Planetesimeow/Shiome/releases/tag/v0.1.0
