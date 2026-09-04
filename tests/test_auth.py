@@ -157,11 +157,33 @@ def test_bearer_token_works(db_path, monkeypatch):
 
 
 # ---------- 没配鉴权时的兜底 ----------
+#
+# 这两个测试要控制「请求来自哪个 IP」。TestClient 的 client= 参数是新版 starlette 才有的，
+# requirements.txt 钉的版本没有它 —— 所以改成替换 _client_key（中间件读来源地址的那一个函数）。
+# 取地址本身由下面的 test_client_key_reads_the_peer_address 单独盯着，覆盖没有变少。
+
+
+class _FakePeer:
+    def __init__(self, host):
+        self.host = host
+
+
+class _FakeRequest:
+    def __init__(self, host):
+        self.client = _FakePeer(host) if host else None
+
+
+def test_client_key_reads_the_peer_address():
+    from app.main import _client_key
+    assert _client_key(_FakeRequest("203.0.113.9")) == "203.0.113.9"
+    assert _client_key(_FakeRequest(None)) == "unknown", "拿不到来源地址不能当成本机"
+
 
 def test_unconfigured_allows_loopback(db_path, monkeypatch):
     from app import main
     monkeypatch.setattr(main, "AUTH", AuthConfig(env={}))
-    with TestClient(main.app, client=("127.0.0.1", 5000)) as c:
+    monkeypatch.setattr(main, "_client_key", lambda request: "127.0.0.1")
+    with TestClient(main.app) as c:
         assert c.get("/api/posts").status_code == 200
 
 
@@ -171,7 +193,8 @@ def test_unconfigured_refuses_everything_else(db_path, monkeypatch):
     """
     from app import main
     monkeypatch.setattr(main, "AUTH", AuthConfig(env={}))
-    with TestClient(main.app, client=("203.0.113.9", 5000)) as c:
+    monkeypatch.setattr(main, "_client_key", lambda request: "203.0.113.9")
+    with TestClient(main.app) as c:
         r = c.get("/api/posts")
         assert r.status_code == 403
         assert "鉴权" in r.json()["detail"]
