@@ -37,6 +37,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - No cap by default. Spend is always tracked and visible; a surprise refusal is worse than
   an overrun for a personal tool. The deploy docs will recommend setting one.
 
+### [0.3.0-dev.1] — 2026-09-02
+
+**Added**
+- Authentication — the item flagged as "mandatory before any remote deployment" since the
+  first design notes. Password login with a signed session cookie for the browser, and an
+  `Authorization: Bearer` token for scripts and the mobile capture flow coming in Phase 2.
+  Login attempts are rate-limited per source address.
+- `python -m scripts.set_password` generates the hash and secret without the password ever
+  appearing in shell history or output.
+- `GET /api/version`, deliberately public, so a bug report can name what it was running.
+- Logout button in the dashboard header, shown only when a password is actually configured.
+
+**Security**
+- With no password and no API token configured, the app now serves **loopback only** and
+  refuses everything else with an explanation. Local development stays zero-config, and
+  "forgot to set up auth before exposing it" — the usual way small tools leak — stops
+  being reachable. Passwords are hashed with scrypt; sessions are HMAC-signed and expire.
+
 ### [0.2.0] — 2026-09-02
 
 **Breaking**
@@ -157,6 +175,21 @@ Initial public release of the runnable skeleton.
   按模型覆盖，不用改代码。
 - 默认不设上限。花销永远统计、永远可见；对一个自用工具来说，突然被拒绝比超支更让人困惑。
   部署文档里会建议设一个。
+
+### [0.3.0-dev.1] — 2026-09-02
+
+**新增**
+- 鉴权 —— 从最早的设计备忘起就写着「远程部署前必须补上」的那一项。浏览器走口令登录 +
+  签名 cookie；脚本和 Phase 2 的手机采集走 `Authorization: Bearer` token。
+  登录失败按来源 IP 限速。
+- `python -m scripts.set_password` 生成哈希和密钥，明文口令不会出现在命令历史或输出里。
+- `GET /api/version`，刻意做成公开的 —— 一份 bug 报告要能说清楚跑的是哪一版。
+- dashboard 头部的退出按钮，只在服务端确实配了口令时才显示。
+
+**安全**
+- 没配口令也没配 API token 时，应用只接受**本机**请求，其余一律拒绝并说明原因。
+  本地开发照旧零配置，而「忘了配鉴权就丢到公网」这条最常见的事故路径直接走不通。
+  口令用 scrypt 哈希，会话用 HMAC 签名并带过期。
 
 ### [0.2.0] — 2026-09-02
 

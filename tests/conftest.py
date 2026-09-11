@@ -7,9 +7,17 @@ pytest 公共装置。
 2. **数据放插槽里。** 测试输入在 tests/fixtures/*.json，改数据不用动测试代码。
 """
 import json
+import os
 import pathlib
 
 import pytest
+
+# 鉴权配置在 app.main 导入时读一次，所以必须在任何 app 导入之前设好。
+# 测试统一走 Bearer token 这条通道：既让每个既有测试都真的过一遍鉴权，
+# 又不用在每个 fixture 里模拟登录。口令那条通道由 test_auth.py 单独覆盖。
+TEST_API_TOKEN = "test-token-not-a-secret"
+os.environ.setdefault("SHIOME_API_TOKEN", TEST_API_TOKEN)
+os.environ.setdefault("SHIOME_OWNER_ID", "local")
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
 FIXTURES = pathlib.Path(__file__).parent / "fixtures"
@@ -52,7 +60,7 @@ def client(db_path):
     from fastapi.testclient import TestClient
     from app.main import app
 
-    with TestClient(app) as c:
+    with TestClient(app, headers={"Authorization": f"Bearer {TEST_API_TOKEN}"}) as c:
         yield c
 
 

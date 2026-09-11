@@ -31,7 +31,12 @@ jobs:
       - name: Run tests
         run: pytest -m "not costs_money"
 
-      - name: Check the app actually boots
+      # 冒烟：应用真的能起来，而且鉴权是关着的。
+      # 这一步同时盯住「没带凭据必须被拒」—— 一个能启动但谁都进得去的实例，
+      # 比起不来更糟。
+      - name: Check the app boots and refuses anonymous callers
+        env:
+          SHIOME_API_TOKEN: ci-boot-check-not-a-secret
         run: |
           python - <<'PY'
           import pathlib, tempfile
@@ -39,8 +44,12 @@ jobs:
           database.DB_PATH = pathlib.Path(tempfile.mkdtemp()) / "boot.db"
           from fastapi.testclient import TestClient
           from app.main import app
+
+          auth = {"Authorization": "Bearer ci-boot-check-not-a-secret"}
           with TestClient(app) as c:
-              assert c.get("/").status_code == 200
-              assert c.get("/api/accounts").status_code == 200
-          print("boots clean")
+              assert c.get("/api/accounts").status_code == 401, "无凭据必须被拒"
+              assert c.get("/api/version").status_code == 200, "版本号是公开的"
+              assert c.get("/", headers=auth).status_code == 200
+              assert c.get("/api/accounts", headers=auth).status_code == 200
+          print("boots clean, and closed to anonymous callers")
           PY

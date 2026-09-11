@@ -49,6 +49,19 @@ Then open http://localhost:8000
 
 **Configuration** (`.env`): `ANTHROPIC_API_KEY` is required; `ANALYSIS_MODEL` is an optional override for the model used.
 
+### Running it somewhere other than your laptop
+
+With no password configured Shiome serves **loopback only** and refuses every remote
+request — so a local install needs no setup, and an instance cannot accidentally end up
+open on the internet. To make it reachable, set a password first:
+
+```bash
+python -m scripts.set_password     # prints the lines to paste into .env
+```
+
+That gives you a browser login and, optionally, an `Authorization: Bearer` token for
+scripts and phone shortcuts. Failed logins are rate-limited per source address.
+
 ### Getting data in
 
 Douyin's creator center has no API — and its export file carries only account-level daily plays — so:
@@ -101,7 +114,7 @@ money. To run them deliberately:
 
 ### Status & roadmap
 
-This is an early skeleton. Not yet built (contributions/iterations welcome): a web form for video entry, comment/DM intent grading, a maintainable content-risk keyword library, batch-import scripts, and authentication (**required before any remote deployment** — it currently runs with no login).
+Not yet built (contributions/iterations welcome): a web form for post entry, comment/DM intent grading, a maintainable content-risk keyword library, and batch-import scripts. Where it's heading next is in [docs/roadmap-v2.md](docs/roadmap-v2.md).
 
 ### Design rationale
 
@@ -161,6 +174,18 @@ uvicorn app.main:app --reload
 
 **配置**（`.env`）：`ANTHROPIC_API_KEY` 必填；`ANALYSIS_MODEL` 是可选的模型覆盖项。
 
+### 想跑在笔记本以外的地方
+
+没配口令时，潮目**只接受本机请求**，其余一律拒绝 —— 所以本地装完不用做任何配置，
+而一个实例也不会不小心裸奔在公网上。要让它可以远程访问，先设个口令：
+
+```bash
+python -m scripts.set_password     # 打印出要贴进 .env 的几行
+```
+
+这会给你一个网页登录入口，以及一个可选的 `Authorization: Bearer` token，
+给脚本和手机快捷指令直接调接口用。登录失败按来源 IP 限速。
+
 ### 数据怎么进来
 
 抖音创作者中心没有 API——导出文件也只有账号级"日期+播放量"两列——所以：
@@ -211,7 +236,7 @@ pytest
 
 ### 现状 & 路线图
 
-这是一个早期骨架。尚未实现（欢迎迭代/贡献）：视频录入的网页表单、评论/私信意向分级、可维护的内容风控关键词库、批量导入脚本，以及鉴权（**远程部署前必须补上**——目前无任何登录）。
+尚未实现（欢迎迭代/贡献）：作品录入的网页表单、评论/私信意向分级、可维护的内容风控关键词库、批量导入脚本。接下来往哪走见 [docs/roadmap-v2.md](docs/roadmap-v2.md)。
 
 ### 设计思路
 

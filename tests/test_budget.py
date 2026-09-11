@@ -139,3 +139,69 @@ def test_usage_endpoint(client):
     body = client.get("/api/usage").json()
     assert body["month"] == month_key()
     assert set(body) >= {"spent_usd", "limit_usd", "calls", "by_model"}
+
+
+@pytest.mark.parametrize("credentials", ["cookie", "bearer"])
+def test_auth_and_budget_gates_work_together(seeded, monkeypatch, credentials):
+    """Both authentication channels must preserve the budget gate on every paid route."""
+    from unittest.mock import Mock
+
+    from fastapi.testclient import TestClient
+
+    from app import main
+    from app.auth import AuthConfig, hash_password
+    from app.database import get_conn
+
+    password = "budget-test-password"
+    token = "budget-test-token"
+    monkeypatch.setattr(main, "AUTH", AuthConfig(env={
+        "SHIOME_PASSWORD_HASH": hash_password(password),
+        "SHIOME_SECRET_KEY": "budget-test-secret",
+        "SHIOME_API_TOKEN": token,
+    }))
+    monkeypatch.setenv("SHIOME_MONTHLY_BUDGET_USD", "1")
+
+    post_call = Mock(return_value={"ok": True})
+    account_call = Mock(return_value={"ok": True})
+    vision_call = Mock(return_value={"ok": True})
+    monkeypatch.setitem(main.ANALYSES["enhancement"], "run", post_call)
+    monkeypatch.setitem(main.ANALYSES["content_ideas"], "run", account_call)
+    monkeypatch.setattr(main, "extract_screenshot", vision_call)
+    routes = [
+        (f"/api/analyze/posts/{seeded[0]}/enhancement", {}, post_call),
+        ("/api/analyze/account/content_ideas", {}, account_call),
+        ("/api/vision/extract",
+         {"files": {"file": ("x.png", b"mock-image", "image/png")}}, vision_call),
+    ]
+
+    with TestClient(main.app) as c:
+        assert c.get("/api/usage").status_code == 401
+        for route, options, call in routes:
+            assert c.post(route, **options).status_code == 401
+            call.assert_not_called()
+
+        if credentials == "cookie":
+            assert c.post("/api/auth/login", json={"password": password}).status_code == 200
+        else:
+            c.headers["Authorization"] = f"Bearer {token}"
+
+        assert c.get("/api/usage").status_code == 200
+        for route, options, call in routes:
+            response = c.post(route, **options)
+            assert response.status_code == 200
+            assert response.json() == {"ok": True}
+            call.assert_called_once()
+            call.reset_mock()
+
+        with get_conn() as conn:
+            record_usage(conn, "anthropic", "claude-haiku-4-5", "analysis", 1_000_000, 0)
+
+        usage = c.get("/api/usage")
+        assert usage.status_code == 200
+        assert usage.json()["over_budget"]
+        for route, options, call in routes:
+            response = c.post(route, **options)
+            assert response.status_code == 200
+            assert response.json()["_budget"]["over_budget"]
+            assert response.json()["retryable"] is False
+            call.assert_not_called()
