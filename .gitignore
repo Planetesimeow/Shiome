@@ -19,6 +19,9 @@ test_output/
 data_inbox/
 reference/
 videodata/
+userscreenshots/
+work/
+node_modules/
 *.xlsx
 *.xls
 

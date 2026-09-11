@@ -3,8 +3,44 @@ const PORTFOLIO_LEVEL_TYPES = ["content_ideas", "creator_profile"]; // 不依赖
 
 async function api(path, options = {}) {
   const res = await fetch(path, options);
-  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 401) {
+    // Keep an extracted draft on screen; login in another tab then retry saving.
+    document.getElementById("reauth-notice").hidden = false;
+    throw new Error("登录已过期，请从顶部提示重新登录后重试");
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body.detail === "string" ? body.detail : `请求失败（${res.status}）`);
+  }
+  if (!path.startsWith("/api/auth/") && path !== "/api/version") document.getElementById("reauth-notice").hidden = true;
   return res.json();
+}
+
+function showMobileView(view) {
+  document.body.dataset.mobileView = view;
+  document.querySelectorAll(".mobile-nav button").forEach((button) => {
+    if (button.dataset.view === (view === "detail" ? "posts" : view)) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  document.getElementById("tools-menu").open = false;
+  window.scrollTo({ top: 0 });
+}
+
+function updateDraftCount() {
+  const count = document.getElementById("vision-panel").children.length;
+  document.getElementById("draft-count").textContent = count ? ` · ${count}` : "";
+}
+
+function localDateTime(date = new Date()) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function displayDateTime(value) {
+  if (!value) return "--";
+  // Offset-less legacy observations keep their original wall time.
+  const date = new Date(value);
+  if (/(Z|[+-]\d{2}:\d{2})$/.test(value) && !Number.isNaN(date.getTime())) return localDateTime(date).replace("T", " ");
+  return value.slice(0, 16).replace("T", " ");
 }
 
 // ---------- 视频列表 ----------
@@ -16,6 +52,10 @@ async function loadVideos() {
   for (const v of state.posts) {
     const li = document.createElement("li");
     li.className = "video-row" + (v.id === state.selectedId ? " selected" : "");
+    li.tabIndex = 0;
+    li.onkeydown = (e) => {
+      if (e.target === li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); selectVideo(v.id); }
+    };
     li.onclick = () => selectVideo(v.id);
     const completion = v.completion_rate != null ? (v.completion_rate * 100).toFixed(1) + "%" : "--";
     li.innerHTML = `
@@ -29,6 +69,7 @@ async function loadVideos() {
       <button class="row-delete" title="删除这条视频及其快照/分析" onclick="deleteVideo(event, ${v.id}, this)">✕</button>`;
     list.appendChild(li);
   }
+  if (!state.posts.length) list.innerHTML = '<li class="empty-state">还没有作品。先上传创作者中心截图，或从工具中导入 CSV。</li>';
   document.getElementById("status-line").textContent = `${state.posts.length} 条作品`;
   document.getElementById("video-count").textContent = state.posts.length || "";
   updateHeroStats();
@@ -50,6 +91,7 @@ async function loadHeroBaseline() {
 }
 
 function showOverview() {
+  showMobileView("overview");
   state.selectedId = null;
   document.getElementById("detail-view").style.display = "none";
   document.getElementById("hero").style.display = "";
@@ -144,7 +186,9 @@ async function loadTrendChart() {
 // ---------- 选中视频 / 分析 ----------
 
 function selectVideo(id) {
+  showMobileView("detail");
   state.selectedId = id;
+  document.getElementById("detail-title").textContent = state.posts.find((p) => p.id === id)?.title || "作品详情";
   document.getElementById("hero").style.display = "none";
   document.getElementById("detail-view").style.display = "block";
   loadVideos();
@@ -204,6 +248,8 @@ async function runAnalysis(type) {
     renderResult(type, result);
   } catch (e) {
     container.innerHTML = `<div class="empty-state">分析失败：${escapeHtml(e.message)}</div>`;
+  } finally {
+    loadUsage();
   }
 }
 
@@ -338,7 +384,7 @@ async function loadDiffusionChart(id) {
     return;
   }
   wrap.style.display = "block";
-  const labels = snapshots.map((s) => (s.checked_at || "").slice(0, 16).replace("T", " "));
+  const labels = snapshots.map((s) => displayDateTime(s.checked_at));
   const plays = snapshots.map((s) => s.plays);
   const interaction = snapshots.map((s) =>
     s.plays ? +(((s.likes || 0) + (s.comments || 0) + (s.shares || 0) + (s.saves || 0)) / s.plays * 100).toFixed(2) : null
@@ -415,7 +461,7 @@ async function loadSnapshots(id) {
     return;
   }
   list.innerHTML = snapshots
-    .map((s) => `<li>${s.checked_at.slice(0, 16).replace("T", " ")} — 播放 ${formatNum(s.plays)} / 赞 ${formatNum(s.likes)} / 评论 ${formatNum(s.comments)}</li>`)
+    .map((s) => `<li>${escapeHtml(displayDateTime(s.checked_at))} — 播放 ${formatNum(s.plays)} / 赞 ${formatNum(s.likes)} / 评论 ${formatNum(s.comments)}</li>`)
     .join("");
 }
 
@@ -475,6 +521,7 @@ let visionSeq = 0;
 // 视频字段：[key, 标签, 类型] 类型 pct 的展示为百分数，保存时 /100
 const V_FIELDS = [
   ["title", "标题", "text"], ["publish_datetime", "发布时间", "text"],
+  ["duration_sec", "作品时长s", "int"],
   ["plays", "播放", "int"], ["likes", "点赞", "int"],
   ["comments", "评论", "int"], ["shares", "分享", "int"],
   ["saves", "收藏", "int"], ["danmaku_count", "弹幕", "int"],
@@ -498,6 +545,8 @@ document.getElementById("shot-input").addEventListener("change", async (e) => {
   if (!files.length) return;
   const panel = document.getElementById("vision-panel");
   panel.style.display = "block";
+  showMobileView("capture");
+  if (!window.matchMedia("(max-width: 760px)").matches) panel.scrollIntoView({ block: "start" });
   for (const f of files) {
     const cardId = `vd-${++visionSeq}`;
     const holder = document.createElement("div");
@@ -505,13 +554,20 @@ document.getElementById("shot-input").addEventListener("change", async (e) => {
     holder.id = cardId;
     holder.innerHTML = `<div class="card-tag">截图提取中 · ${escapeHtml(f.name)}</div><div class="empty-state">调用 Claude vision 识别中...</div>`;
     panel.prepend(holder);
+    updateDraftCount();
+    if (f.size > 10 * 1024 * 1024) {
+      holder.innerHTML = `<p>${escapeHtml(f.name)} 超过 10 MB，请缩小后再上传。</p><button class="btn-ghost" onclick="discardVisionDraft('${cardId}')">关闭</button>`;
+      continue;
+    }
     const fd = new FormData();
     fd.append("file", f);
     try {
       const draft = await api("/api/vision/extract", { method: "POST", body: fd });
       renderVisionDraft(cardId, f.name, draft);
     } catch (err) {
-      holder.innerHTML = `<div class="card-tag">${escapeHtml(f.name)}</div><p>提取失败：${escapeHtml(err.message)}</p>`;
+      holder.innerHTML = `<div class="card-tag">${escapeHtml(f.name)}</div><p>提取失败：${escapeHtml(err.message)}</p><button class="btn-ghost" onclick="discardVisionDraft('${cardId}')">关闭</button>`;
+    } finally {
+      loadUsage();
     }
   }
 });
@@ -520,8 +576,10 @@ function fieldInput(cardId, scope, idx, key, label, type, value) {
   let v = value;
   if (type === "pct" && v != null) v = +(v * 100).toFixed(2);
   const shown = v == null ? "" : v;
+  // Attribute values need quote escaping as well as HTML text escaping.
+  const attr = escapeHtml(shown).replaceAll('"', "&quot;");
   return `<label>${escapeHtml(label)}<input id="${cardId}-${scope}${idx}-${key}"
-    type="${type === "text" ? "text" : "number"}" step="any" value="${escapeHtml(shown)}"></label>`;
+    type="${type === "text" ? "text" : "number"}" ${type === "text" ? "" : 'inputmode="decimal"'} step="any" value="${attr}"></label>`;
 }
 
 function readField(cardId, scope, idx, key, type) {
@@ -542,7 +600,7 @@ function renderVisionDraft(cardId, fname, draft) {
   const holder = document.getElementById(cardId);
   if (draft._api_error) {
     holder.innerHTML = `<div class="card-tag">${escapeHtml(fname)}</div>
-      <p>API 调用失败${draft.retryable ? "（可重试）" : ""}：${escapeHtml(draft._api_error)}</p>`;
+      <p>API 调用失败${draft.retryable ? "（可重试）" : ""}：${escapeHtml(draft._api_error)}</p><button class="btn-ghost" onclick="discardVisionDraft('${cardId}')">关闭</button>`;
     return;
   }
   visionDrafts[cardId] = draft;
@@ -574,7 +632,7 @@ function renderVisionDraft(cardId, fname, draft) {
       <p>${escapeHtml(co.shape_description || "")}<span class="confidence">${escapeHtml(co.granularity || "")}</span></p>`;
   }
   if (draft.page_type === "video_detail") {
-    const now = new Date().toISOString().slice(0, 16);
+    const now = localDateTime();
     html += `<div class="vision-grid"><label>观察时间（快照 checked_at）
       <input id="${cardId}-checked_at" type="datetime-local" value="${now}"></label></div>`;
   }
@@ -582,7 +640,7 @@ function renderVisionDraft(cardId, fname, draft) {
 
   const m = draft._meta || {};
   html += `<div class="draft-actions">
-    <button class="primary" onclick="saveVisionDraft('${cardId}')">确认入库</button>
+    <button class="primary" data-save-draft onclick="saveVisionDraft('${cardId}')">确认入库</button>
     <button class="btn-ghost" onclick="discardVisionDraft('${cardId}')">丢弃</button>
     <span class="confidence">${m.input_tokens != null ? `${formatNum(m.input_tokens)}+${formatNum(m.output_tokens)} tokens` : ""}</span>
   </div>`;
@@ -592,6 +650,8 @@ function renderVisionDraft(cardId, fname, draft) {
 async function saveVisionDraft(cardId) {
   const draft = visionDrafts[cardId];
   if (!draft) return;
+  const saveButton = document.querySelector(`#${cardId} [data-save-draft]`);
+  if (saveButton.disabled) return;
   const videos = (draft.videos || []).map((v, i) => {
     if (v.status === "私密") return { status: "私密", title: v.title };
     const out = { status: v.status || "已发布" };
@@ -605,12 +665,17 @@ async function saveVisionDraft(cardId) {
     account.peer_percentiles = draft.account.peer_percentiles || null;
   }
   const checkedEl = document.getElementById(`${cardId}-checked_at`);
+  if (videos.some((v) => v.status !== "私密" && (!v.title?.trim() || !/^\d{4}-\d{2}-\d{2}/.test(v.publish_datetime || "")))) {
+    alert("请补全每条作品的标题和发布时间（例如 2026-09-11 12:30），再确认入库。");
+    return;
+  }
   const payload = {
     page_type: draft.page_type,
     videos, account,
     curve_observation: draft.curve_observation,
     checked_at: checkedEl?.value ? new Date(checkedEl.value).toISOString() : null,
   };
+  saveButton.disabled = true;
   try {
     const r = await api("/api/vision/save", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -620,8 +685,12 @@ async function saveVisionDraft(cardId) {
       (r.skipped_private ? ` 跳过私密${r.skipped_private}` : "") + (r.account_saved ? " 账号级✓" : "");
     discardVisionDraft(cardId);
     await loadVideos(); await loadTrendChart(); await loadHeroBaseline();
+    await loadDuplicateCandidates();
+    document.getElementById("status-line").textContent = `已保存：新增 ${r.inserted} 条，更新 ${r.updated} 条，快照 ${r.snapshots} 条`;
   } catch (err) {
     document.getElementById("status-line").textContent = "入库失败: " + err.message;
+  } finally {
+    saveButton.disabled = false;
   }
 }
 
@@ -630,6 +699,7 @@ function discardVisionDraft(cardId) {
   document.getElementById(cardId)?.remove();
   const panel = document.getElementById("vision-panel");
   if (!panel.children.length) panel.style.display = "none";
+  updateDraftCount();
 }
 
 // ---------- API 花销 ----------
@@ -672,10 +742,10 @@ async function logout() {
 
 loadUsage();
 initAuth();
-loadVideos();
-loadTrendChart();
-loadHeroBaseline();
-loadDuplicateCandidates();
+Promise.all([loadVideos(), loadTrendChart(), loadHeroBaseline(), loadDuplicateCandidates()])
+  .catch((err) => {
+    if (!err.message.startsWith("登录已过期")) document.getElementById("status-line").textContent = "加载失败：" + err.message;
+  });
 
 
 // ---------- 疑似重复的作品（发现由机器做，合并由人确认）----------

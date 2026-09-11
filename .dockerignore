@@ -1,0 +1,9 @@
+**
+!requirements.txt
+!app/
+!app/**
+!scripts/
+!scripts/**
+app/data/
+**/__pycache__/
+**/*.pyc

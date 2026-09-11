@@ -274,12 +274,8 @@ def backup_db(keep: int = 10, tag: str | None = None):
     dest = backup_dir / f"{name}{DB_PATH.suffix}"
     if dest.exists():
         return None  # 今天已经备份过（同 tag）
-    src, dst = sqlite3.connect(DB_PATH), sqlite3.connect(dest)
-    try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()
+    from app.backups import snapshot
+    snapshot(DB_PATH, dest)
     if tag is None:  # 只轮转每日备份，带 tag 的迁移前备份一律保留
         for old in sorted(backup_dir.glob(f"{DB_PATH.stem}-20*{DB_PATH.suffix}"))[:-keep]:
             old.unlink()

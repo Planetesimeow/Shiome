@@ -13,6 +13,27 @@
 
 ## English
 
+### Current creator goal and future goal selection — 2026-09-11
+
+**Current priority, confirmed by the creator:** find a stable content direction, improve
+viewing, and gain followers. Capture and analysis should support comparisons between
+content series, retention, traffic sources, sharing and follow conversion. Earlier
+references in this plan to prioritising precise reach over broad growth describe the
+original goal; this update records the current priority.
+
+**Backlog — selectable creator goals (not implemented; phase not yet assigned).** A complete
+creator assistant should let each account choose and later change its goal: content
+exploration and audience growth, building a particular audience for future monetisation,
+or direct enquiries and sales, with room for a custom goal. The choice should change the
+metrics emphasised, suggested captures and analysis criteria. Store the effective date and
+the goal used for each analysis so switching goals does not silently reinterpret past
+reports. Preserve the underlying observations across goal changes.
+
+For the current work, use the existing account persona and goal-note fields as context.
+Prioritise reliable screenshot capture and the viewing/follower-growth workflow; build the
+goal-selection interface and broader commercial evaluation later. This backlog item does
+not change the existing phase order.
+
 ### What changes, in one sentence
 
 Shiome stops being *a tool for analysing Douyin* and becomes *a tool for a creator who
@@ -166,6 +187,21 @@ the thing that gets used daily.
 ---
 
 ## 中文
+
+### 当前创作目标与未来目标选择 —— 2026-09-11
+
+**创作者已确认的当前重点：找到稳定的内容方向，提升观看和涨粉。** 采集与分析应优先支持
+内容系列比较、观看留存、流量来源、分享和关注转化。本文较早提到的「精准触达 > 泛量增长」
+记录的是最初目标；本条更新明确当前优先级。
+
+**未来功能：可选择、可切换的创作目标（尚未实现，阶段待定）。** 完整的创作者辅助工具应让
+每个账号选择并随阶段调整目标，例如内容探索与观看/涨粉、积累特定受众为变现做准备、
+获得咨询与成交，并支持自定义目标。目标应影响重点指标、建议采集哪些截图和分析评价标准。
+记录目标生效时间及每次分析使用的目标，切换目标后保留原始观察，历史报告仍能说明当时
+按什么目标评价。
+
+当前迭代沿用已有账号人设与目标备注表达上下文，先做好截图采集保真和观看/涨粉的分析流程；
+目标选择界面及更完整的商业评价放入后续待办。这项待办不改变已有阶段顺序。
 
 ### 一句话说清楚要改什么
 

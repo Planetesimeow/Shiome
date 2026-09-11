@@ -7,6 +7,10 @@
 
 It is deliberately a **runnable skeleton**, not a finished product — a base to keep iterating on with Claude Code.
 
+**Hosting & mobile / 上线与手机使用：** [Deployment guide / 部署指南](docs/deployment.md)
+includes Docker + HTTPS, persistent data, backup / restore, and phone acceptance steps.
+包含 Docker + HTTPS、数据持久化、备份恢复与手机验收步骤。
+
 ---
 
 ## English

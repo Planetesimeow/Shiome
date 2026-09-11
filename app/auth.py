@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import time
 
@@ -92,6 +93,7 @@ class AuthConfig:
 
     def __init__(self, env: dict | None = None):
         e = env if env is not None else os.environ
+        self.production = e.get("SHIOME_ENV", "development").lower() == "production"
         self.password_hash = (e.get("SHIOME_PASSWORD_HASH") or "").strip()
         self.api_token = (e.get("SHIOME_API_TOKEN") or "").strip()
         self.owner_id = (e.get("SHIOME_OWNER_ID") or "local").strip()
@@ -109,6 +111,17 @@ class AuthConfig:
     @property
     def configured(self) -> bool:
         return bool(self.password_hash or self.api_token)
+
+    def validate(self):
+        """A public deployment must support browser login and a stable, explicit secret."""
+        if not self.production:
+            return
+        if not re.fullmatch(r"scrypt\$[0-9a-f]{32}\$[0-9a-f]{64}", self.password_hash):
+            raise RuntimeError("Production requires a valid SHIOME_PASSWORD_HASH; run python -m scripts.set_password")
+        if self.secret_derived or len(self.secret) < 32:
+            raise RuntimeError("Production requires SHIOME_SECRET_KEY with at least 32 characters")
+        if self.session_days < 1:
+            raise RuntimeError("SHIOME_SESSION_DAYS must be positive")
 
 
 def is_loopback(host: str | None) -> bool:
