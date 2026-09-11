@@ -1,0 +1,10 @@
+# Use from the repository root:
+# docker compose -f compose.yaml -f deploy/compose.small.yaml up -d --build --wait
+# Leave memory for the OS on a 1 GB VPS; one image / one analysis at a time.
+services:
+  app:
+    mem_limit: 640m
+    cpus: 1.0
+  caddy:
+    mem_limit: 96m
+    cpus: 0.5

@@ -14,6 +14,30 @@
 
 ## Linux 服务器：Docker Compose + Caddy
 
+### 低预算个人试运行
+
+单人、少量截图的起步配置可先用 1 vCPU / 1 GB 内存 / 20 GB 磁盘。实际服务器购入后仍需检查
+可用内存、磁盘和到手机的网络；CI 覆盖的是受限容器中的启动、HTTPS、数据保留、备份和 12 MP
+图片预处理，不代表已验证某一台 VPS 的实际性能。
+
+将 `deploy/low-budget.env.example` 复制为 `.env.production`，填入凭据。该模板把 AI 月度额度设为
+**0.75 美元**，并固定使用当前已有价格记录的 Anthropic 模型；这不是 0.75 人民币，也不包括服务器。
+模板尚未部署时不会改变任何线上额度。启动时使用：
+
+```bash
+docker compose -f compose.yaml -f deploy/compose.small.yaml up -d --build --wait
+```
+
+后续更新也使用同样两个 `-f` 参数。应用容器限制 640 MB，Caddy 限制 96 MB，给小服务器的系统留出空间。
+先逐张识别、按需运行分析；预算按已记录花销检查，最后一笔或同时进行的调用可能超出余额。
+若需要更严格的账单限制，在模型服务商后台同时设置可用的额度/充值限制。
+
+服务器费用和 AI 费用分别计费。年付服务器的“月均费用”不等于可以每月支付；下单前确认当期总价、
+税费及续费金额。起步可用 [Duck DNS 免费子域名](https://www.duckdns.org/about.jsp)，将其 A 记录指向
+服务器后交由 Caddy 申请 HTTPS 证书。备份先从应用下载到自己的另一台设备；自动异地备份另外配置。
+
+### 通用配置
+
 安装 Docker Engine 和 **Compose 2.30.0 或更新版本**。密码哈希包含 `$`，
 这里用 [`env_file.format: raw`](https://docs.docker.com/reference/compose-file/services/#format)
 确保原样传入。Caddy 根据域名自动签发和续期证书，证书数据也放在持久卷；

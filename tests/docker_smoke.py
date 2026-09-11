@@ -24,7 +24,8 @@ def main():
         file.write(f"SHIOME_PASSWORD_HASH={hash_password('docker-test-password')}\n"
                    f"SHIOME_SECRET_KEY={secrets.token_hex(32)}\nSHIOME_MONTHLY_BUDGET_USD=1\n")
     env = {**os.environ, "SHIOME_DOMAIN": "localhost"}
-    command = ["docker", "compose", "--project-name", "shiome-ci-smoke", "--env-file", os.devnull]
+    command = ["docker", "compose", "--project-name", "shiome-ci-smoke", "--env-file", os.devnull,
+               "-f", "compose.yaml", "-f", "deploy/compose.small.yaml"]
     # The local-only CA is intentionally untrusted on the ephemeral CI runner.
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl._create_unverified_context()),
@@ -67,7 +68,14 @@ def main():
         assert any(post["title"] == "container persistence test" for post in posts)
         backup = request("/api/backup").read()
         assert backup.startswith(b"SQLite format 3\x00")
-        print("PASS Compose HTTPS, auth, literal secrets, database persistence and backup export")
+        # Exercise real image decoding/resizing under the small-container memory limit.
+        # This runs the local preparation code only, with a synthetic image and no API call.
+        subprocess.run(command + ["exec", "-T", "app", "python", "-c",
+            "import io; from PIL import Image; from app.vision import prepare_image; "
+            "buf=io.BytesIO(); im=Image.new('RGB',(4000,3000),'white'); im.save(buf,format='PNG'); "
+            "del im; mime,data=prepare_image(buf.getvalue()); assert mime=='image/jpeg' and data; "
+            "print('PASS 12 MP image preparation under memory limit')"], env=env, check=True)
+        print("PASS small Compose deployment: HTTPS, auth, literal secrets, persistence and backup")
     finally:
         subprocess.run(command + ["logs", "--tail", "30"], env=env)
         subprocess.run(command + ["down", "--volumes"], env=env)
