@@ -14,6 +14,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.4] — 2026-09-11
+
+**Changed**
+- Require a new branch for every new change, however small, based on and targeting the
+  preceding work branch. Document parent-first merging and defer branch deletion until
+  child PRs are retargeted; add the agreement to `AGENTS.md` for future collaborators.
+
 ### [0.3.0-dev.3] — 2026-09-11
 
 **Added**
@@ -187,6 +194,12 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0-dev.4] — 2026-09-11
+
+**调整**
+- 每个新改动无论大小，都从前一个工作分支新建分支，PR 指向前一个分支。明确先合父分支、
+  子 PR 改好目标后再删除父分支，并将约定写入 `AGENTS.md`，供后续协作者遵守。
 
 ### [0.3.0-dev.3] — 2026-09-11
 
