@@ -1,4 +1,5 @@
-const state = { posts: [], selectedId: null, activeTab: "enhancement" };
+const state = { posts: [], selectedId: null, activeTab: "enhancement", detailRevision: 0, analysisRevision: 0 };
+const pendingAnalyses = new Map();
 const PORTFOLIO_LEVEL_TYPES = ["content_ideas", "creator_profile"]; // 不依赖单条视频的分析类型
 
 async function api(path, options = {}) {
@@ -52,6 +53,7 @@ async function loadVideos() {
   for (const v of state.posts) {
     const li = document.createElement("li");
     li.className = "video-row" + (v.id === state.selectedId ? " selected" : "");
+    li.dataset.postId = v.id;
     li.tabIndex = 0;
     li.onkeydown = (e) => {
       if (e.target === li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); selectVideo(v.id); }
@@ -93,9 +95,11 @@ async function loadHeroBaseline() {
 function showOverview() {
   showMobileView("overview");
   state.selectedId = null;
+  state.detailRevision++;
+  state.analysisRevision++;
   document.getElementById("detail-view").style.display = "none";
   document.getElementById("hero").style.display = "";
-  loadVideos();
+  highlightSelectedVideo();
 }
 
 async function deleteVideo(event, id, btn) {
@@ -107,7 +111,7 @@ async function deleteVideo(event, id, btn) {
     await api(`/api/posts/${id}`, { method: "DELETE" });
     document.getElementById("status-line").textContent = "已删除";
     if (state.selectedId === id) showOverview();
-    else await loadVideos();
+    await loadVideos();
     await loadTrendChart();
     await loadHeroBaseline();
   } catch (err) {
@@ -185,18 +189,45 @@ async function loadTrendChart() {
 
 // ---------- 选中视频 / 分析 ----------
 
-function selectVideo(id) {
+function highlightSelectedVideo() {
+  document.querySelectorAll(".video-row").forEach((row) => {
+    row.classList.toggle("selected", Number(row.dataset.postId) === state.selectedId);
+  });
+}
+
+async function selectVideo(id) {
   showMobileView("detail");
   state.selectedId = id;
+  const revision = ++state.detailRevision;
   document.getElementById("detail-title").textContent = state.posts.find((p) => p.id === id)?.title || "作品详情";
   document.getElementById("hero").style.display = "none";
   document.getElementById("detail-view").style.display = "block";
-  loadVideos();
-  loadMetricsPanel(id);
-  loadDiffusionChart(id);
-  loadContentProfileForm(id);
-  loadSnapshots(id);
+  highlightSelectedVideo();
+  document.getElementById("metrics-panel").textContent = "加载中...";
+  document.getElementById("snapshot-list").textContent = "加载中...";
+  document.getElementById("diffusion-wrap").style.display = "none";
+  document.getElementById("creative-hint").textContent = "加载中...";
+  document.querySelectorAll('#profile-panel input, #profile-panel textarea').forEach(el => { el.value = ""; });
+  document.querySelectorAll('#profile-panel input, #profile-panel textarea, #profile-panel button').forEach(el => { el.disabled = true; });
   loadResultForActiveTab();
+  try {
+    // Share each response across panels. Late responses must never change another post's form.
+    const [post, baseline, snapshots] = await Promise.all([
+      api(`/api/posts/${id}`), api("/api/baseline"), api(`/api/posts/${id}/snapshots`),
+    ]);
+    if (revision !== state.detailRevision) return;
+    renderMetricsPanel(post, baseline);
+    renderContentProfile(post);
+    renderSnapshots(snapshots);
+    renderDiffusionChart(snapshots);
+    document.querySelectorAll('#profile-panel input, #profile-panel textarea, #profile-panel button').forEach(el => { el.disabled = false; });
+  } catch (err) {
+    if (revision !== state.detailRevision) return;
+    document.getElementById("metrics-panel").textContent = "作品详情加载失败，请重新选择这条作品重试。";
+    document.getElementById("snapshot-list").textContent = "未能加载";
+    document.getElementById("creative-hint").textContent = "加载失败，暂不可编辑";
+    document.getElementById("status-line").textContent = "加载失败：" + err.message;
+  }
 }
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -208,48 +239,61 @@ document.querySelectorAll(".tab").forEach((tab) => {
   };
 });
 
+function analysisKey(id, type) {
+  return `${PORTFOLIO_LEVEL_TYPES.includes(type) ? "account" : id}:${type}`;
+}
+
+function isCurrentAnalysis(id, type, revision) {
+  return state.selectedId === id && state.activeTab === type && state.analysisRevision === revision;
+}
+
 async function loadResultForActiveTab() {
   const type = state.activeTab;
+  const id = state.selectedId;
+  if (!id) return;
+  if (pendingAnalyses.has(analysisKey(id, type))) return runAnalysis(type);
+  const revision = ++state.analysisRevision;
   const container = document.getElementById("result-container");
   container.innerHTML = `<div class="empty-state">加载中...</div>`;
-
   const query = PORTFOLIO_LEVEL_TYPES.includes(type)
-    ? `analysis_type=${type}`
-    : `post_id=${state.selectedId}&analysis_type=${type}`;
-  const cached = await api(`/api/analyze/results?${query}`);
-
-  if (cached.length > 0) {
-    const row = cached[0];
-    renderResult(type, row.result_json, {
-      model: row.model_used,
-      created: row.created_at,
-      inputTokens: row.input_tokens,
-      outputTokens: row.output_tokens,
-    });
-  } else {
-    container.innerHTML = `
-      <div class="empty-state">
-        还没有分析结果<br><br>
-        <button class="primary" onclick="runAnalysis('${type}')">运行分析</button>
-      </div>`;
+    ? `analysis_type=${type}` : `post_id=${id}&analysis_type=${type}`;
+  try {
+    const cached = await api(`/api/analyze/results?${query}`);
+    if (!isCurrentAnalysis(id, type, revision)) return;
+    if (cached.length) {
+      const row = cached[0];
+      renderResult(type, row.result_json, { model: row.model_used, created: row.created_at,
+        inputTokens: row.input_tokens, outputTokens: row.output_tokens });
+    } else {
+      container.innerHTML = `<div class="empty-state">还没有分析结果<br><br>
+        <button class="primary" onclick="runAnalysis('${type}')">运行分析</button></div>`;
+    }
+  } catch (err) {
+    if (isCurrentAnalysis(id, type, revision)) container.innerHTML =
+      `<div class="empty-state">加载失败：${escapeHtml(err.message)}<br>
+       <button class="btn-ghost" onclick="loadResultForActiveTab()">重新加载</button></div>`;
   }
 }
 
 async function runAnalysis(type) {
+  const id = state.selectedId;
+  if (!id || state.activeTab !== type) return;
+  const revision = ++state.analysisRevision;
+  const key = analysisKey(id, type);
   const container = document.getElementById("result-container");
-  container.innerHTML = `<div class="empty-state">调用 Claude 分析中...</div>`;
+  container.innerHTML = `<div class="empty-state">分析中，请稍候...</div>`;
+  if (!pendingAnalyses.has(key)) {
+    const path = PORTFOLIO_LEVEL_TYPES.includes(type)
+      ? `/api/analyze/account/${type}` : `/api/analyze/posts/${id}/${type}`;
+    const request = api(path, { method: "POST" }).finally(() => { pendingAnalyses.delete(key); loadUsage(); });
+    pendingAnalyses.set(key, request);
+  }
   try {
-    let result;
-    if (PORTFOLIO_LEVEL_TYPES.includes(type)) {
-      result = await api(`/api/analyze/account/${type}`, { method: "POST" });
-    } else {
-      result = await api(`/api/analyze/posts/${state.selectedId}/${type}`, { method: "POST" });
-    }
-    renderResult(type, result);
-  } catch (e) {
-    container.innerHTML = `<div class="empty-state">分析失败：${escapeHtml(e.message)}</div>`;
-  } finally {
-    loadUsage();
+    const result = await pendingAnalyses.get(key);
+    if (isCurrentAnalysis(id, type, revision)) renderResult(type, result);
+  } catch (err) {
+    if (isCurrentAnalysis(id, type, revision)) container.innerHTML =
+      `<div class="empty-state">分析失败：${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -296,12 +340,12 @@ function renderResult(type, data, rowMeta) {
     }
     html += renderList("可以减少投入的类型", data.patterns_to_retire);
   } else if (type === "pool_diagnosis") {
-    const warn = /限流|断崖|冻结/.test(data.curve_shape || "") ? " warn" : "";
+    const warn = /限流|断崖|冻结|数据异常/.test(data.curve_shape || "") ? " warn" : "";
     html += `<h3>扩散曲线形状 <span class="confidence">置信度 ${escapeHtml(data.shape_confidence)}</span></h3>`;
     html += `<p><span class="badge${warn}">${escapeHtml(data.curve_shape)}</span></p>`;
     html += kvRow("扩散阶段", data.diffusion_stage);
     html += kvRow("卡点信号", data.bottleneck_signal ?? "没有明显卡点");
-    html += kvRow("限流vs衰减", data.throttle_vs_decay);
+    html += kvRow("原因与证据", data.throttle_vs_decay);
     html += renderList("推动继续扩散的改动", data.unlock_actions);
     if (data.caveat) html += `<div class="caveat">${escapeHtml(data.caveat)}</div>`;
   } else if (type === "creator_profile") {
@@ -338,26 +382,17 @@ function kvRow(k, v) {
 
 // ---------- 选中视频：指标面板（vs 基线）----------
 
-function rate(a, b) { return b ? a / b : null; }
+function rate(a, b) { return a != null && b > 0 ? a / b : null; }
 function pct(x) { return x == null ? "--" : (x * 100).toFixed(1) + "%"; }
 
-async function loadMetricsPanel(id) {
-  const panel = document.getElementById("metrics-panel");
-  try {
-    const [video, baseline] = await Promise.all([api(`/api/posts/${id}`), api(`/api/baseline`)]);
-    const saveRate = rate(video.saves, video.plays);
-    const v2f = rate(video.new_followers, video.profile_visits);
-    const highIntent = (video.high_intent_comments || 0) + (video.high_intent_dms || 0);
-    const metrics = [
-      ["完播率", pct(video.completion_rate), video.completion_rate, baseline.avg_completion_rate],
-      ["收藏率", pct(saveRate), saveRate, baseline.avg_save_rate],
-      ["访问→关注", pct(v2f), v2f, baseline.avg_visit_to_follow_rate],
-      ["高意向信号", formatNum(highIntent), highIntent, baseline.avg_high_intent_signals],
-    ];
-    panel.innerHTML = `<div class="metrics-grid">${metrics.map(metricCell).join("")}</div>`;
-  } catch (e) {
-    panel.innerHTML = "";
-  }
+function renderMetricsPanel(video, baseline) {
+  const metrics = [
+    ["播放量", formatNum(video.plays), video.plays, baseline.avg_plays],
+    ["完播率", pct(video.completion_rate), video.completion_rate, baseline.avg_completion_rate],
+    ["新增关注", formatNum(video.new_followers), video.new_followers, baseline.avg_new_followers],
+    ["播放→关注", pct(rate(video.new_followers, video.plays)), rate(video.new_followers, video.plays), baseline.avg_play_to_follow_rate],
+  ];
+  document.getElementById("metrics-panel").innerHTML = `<div class="metrics-grid">${metrics.map(metricCell).join("")}</div>`;
 }
 
 function metricCell([label, valueStr, val, base]) {
@@ -375,9 +410,8 @@ function metricCell([label, valueStr, val, base]) {
 
 let diffusionChartInstance = null;
 
-async function loadDiffusionChart(id) {
+function renderDiffusionChart(snapshots) {
   const wrap = document.getElementById("diffusion-wrap");
-  const snapshots = await api(`/api/posts/${id}/snapshots`);
   if (!snapshots || snapshots.length === 0) {
     wrap.style.display = "none";
     if (diffusionChartInstance) { diffusionChartInstance.destroy(); diffusionChartInstance = null; }
@@ -414,10 +448,9 @@ async function loadDiffusionChart(id) {
 
 // ---------- 内容画像 ----------
 
-async function loadContentProfileForm(id) {
+function renderContentProfile(post) {
   // 内容画像住在 creative 上，不在 post 上：同一条内容发多个平台时只有一份，
   // 改哪条 post 的画像，改的都是同一个 creative。
-  const post = await api(`/api/posts/${id}`);
   const c = post.creative || {};
   document.getElementById("pf-content_summary").value = c.content_summary || "";
   document.getElementById("pf-on_screen_text").value = c.on_screen_text || "";
@@ -432,8 +465,10 @@ async function loadContentProfileForm(id) {
   }
 }
 
-async function saveContentProfile() {
-  if (!state.selectedId) return;
+async function saveContentProfile(btn) {
+  if (!state.selectedId || btn.disabled) return;
+  const id = state.selectedId;
+  const revision = state.detailRevision;
   // 注意：这里故意不把空字符串转成 null——表单一直显示的是数据库里的当前值，
   // 所以"清空了再保存"就应该真的清空，而不是被后端的 COALESCE 当成"没传"而保留旧值。
   const payload = {
@@ -443,18 +478,22 @@ async function saveContentProfile() {
     hook_description: document.getElementById("pf-hook_description").value,
     content_pillar: document.getElementById("pf-content_pillar").value,
   };
-  await api(`/api/posts/${state.selectedId}/content-profile`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  document.getElementById("status-line").textContent = "内容画像已保存";
+  btn.disabled = true;
+  try {
+    await api(`/api/posts/${id}/content-profile`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    if (revision === state.detailRevision) document.getElementById("status-line").textContent = "内容画像已保存";
+  } catch (err) {
+    if (revision === state.detailRevision) document.getElementById("status-line").textContent = "保存失败：" + err.message;
+  } finally {
+    if (revision === state.detailRevision) btn.disabled = false;
+  }
 }
 
 // ---------- 快照 ----------
 
-async function loadSnapshots(id) {
-  const snapshots = await api(`/api/posts/${id}/snapshots`);
+function renderSnapshots(snapshots) {
   const list = document.getElementById("snapshot-list");
   if (snapshots.length === 0) {
     list.innerHTML = `<li>还没有快照记录</li>`;
@@ -465,8 +504,10 @@ async function loadSnapshots(id) {
     .join("");
 }
 
-async function addSnapshot() {
-  if (!state.selectedId) return;
+async function addSnapshot(btn) {
+  if (!state.selectedId || btn.disabled) return;
+  const id = state.selectedId;
+  const revision = state.detailRevision;
   const payload = {
     plays: Number(document.getElementById("sn-plays").value) || 0,
     likes: Number(document.getElementById("sn-likes").value) || 0,
@@ -479,19 +520,31 @@ async function addSnapshot() {
       ? Number(document.getElementById("sn-completion").value) / 100
       : null,
   };
-  await api(`/api/posts/${state.selectedId}/snapshots`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  await loadSnapshots(state.selectedId);
-  document.getElementById("status-line").textContent = "快照已记录";
+  btn.disabled = true;
+  let saved = false;
+  try {
+    await api(`/api/posts/${id}/snapshots`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+    });
+    saved = true;
+    const snapshots = await api(`/api/posts/${id}/snapshots`);
+    if (revision !== state.detailRevision) return;
+    renderSnapshots(snapshots);
+    renderDiffusionChart(snapshots);
+    document.getElementById("status-line").textContent = "快照已记录";
+  } catch (err) {
+    if (revision === state.detailRevision) document.getElementById("status-line").textContent =
+      (saved ? "快照已保存，列表刷新失败，请重新选择作品：" : "记录失败：") + err.message;
+  } finally {
+    if (revision === state.detailRevision) btn.disabled = false;
+  }
 }
 
 // ---------- CSV 导入 ----------
 
 document.getElementById("csv-input").addEventListener("change", async (e) => {
   const file = e.target.files[0];
+  e.target.value = "";
   if (!file) return;
   const formData = new FormData();
   formData.append("file", file);
@@ -552,7 +605,7 @@ document.getElementById("shot-input").addEventListener("change", async (e) => {
     const holder = document.createElement("div");
     holder.className = "result-card draft-card";
     holder.id = cardId;
-    holder.innerHTML = `<div class="card-tag">截图提取中 · ${escapeHtml(f.name)}</div><div class="empty-state">调用 Claude vision 识别中...</div>`;
+    holder.innerHTML = `<div class="card-tag">截图提取中 · ${escapeHtml(f.name)}</div><div class="empty-state">识别中，请稍候...</div>`;
     panel.prepend(holder);
     updateDraftCount();
     if (f.size > 10 * 1024 * 1024) {
@@ -734,8 +787,12 @@ async function initAuth() {
 }
 
 async function logout() {
-  await api("/api/auth/logout", { method: "POST" });
-  window.location.href = "/login";
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+    window.location.href = "/login";
+  } catch (err) {
+    document.getElementById("status-line").textContent = "退出失败：" + err.message;
+  }
 }
 
 // ---------- 初始化 ----------
@@ -784,7 +841,7 @@ async function loadDuplicateCandidates() {
       return `<div class="dup-group">
         <div class="dup-reason">${escapeHtml(g.publish_date)} · ${escapeHtml(g.reason)}</div>
         <ul class="dup-list">${rows}</ul>
-        <button class="primary" onclick="mergeDuplicates(${i}, [${g.post_ids.join(",")}], this)">
+        <button class="primary" onclick="mergeDuplicates([${g.post_ids.join(",")}], this)">
           合并这 ${g.post_ids.length} 条
         </button>
       </div>`;
@@ -792,10 +849,10 @@ async function loadDuplicateCandidates() {
     .join("");
 }
 
-async function mergeDuplicates(idx, postIds, btn) {
+async function mergeDuplicates(postIds, btn) {
   if (!confirm(`把 #${postIds.join("、#")} 合并成一条？\n` +
                `保留字段最全的那条作为底稿，其余的非空数值补进来，快照合并去重。\n` +
-               `这一步不可撤销（但数据库每天有备份）。`)) return;
+               `这一步不可撤销。需要保留当前状态时，请先从工具菜单下载备份。`)) return;
   btn.disabled = true;
   try {
     const r = await api("/api/posts/merge", {
@@ -809,6 +866,7 @@ async function mergeDuplicates(idx, postIds, btn) {
     await loadTrendChart();
     await loadHeroBaseline();
     await loadDuplicateCandidates();
+    if (postIds.includes(state.selectedId)) await selectVideo(r.merged_into);
   } catch (err) {
     btn.disabled = false;
     document.getElementById("status-line").textContent = "合并失败: " + err.message;

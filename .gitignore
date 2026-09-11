@@ -26,12 +26,12 @@ node_modules/
 *.xls
 
 # Python
+.pytest_cache/
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 venv/
-.env/
 
 # Local working agreement for AI collaborators — stays local, not public docs
 CLAUDE.md

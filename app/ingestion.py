@@ -1,12 +1,7 @@
 """
-抖音创作者中心没有开放 API，数据只能靠手动导出 CSV 或者手动录入。
-这里做的是"尽量宽容"的列名匹配 —— 因为创作者中心导出的表头
-中英文、版本之间都可能不一样，与其死等一个固定格式，不如先兼容几种常见写法，
-遇到导不进去的字段就在 README 里加一行映射。
-
-如果导出的是截图而不是 CSV：先用创作者中心的"数据导出"功能拿 CSV，
-截图数据建议手动通过 /videos 表单录入，不建议做 OCR（容易读错数字，
-对于要拿去做决策的数据，宁可手动确认一次）。
+作品级 CSV 导入：每行必须包含标题和发布时间，可附作品指标。
+兼容常见中英文列名，保留原始列用于复核。账号按日统计的导出不能当作作品导入。
+截图走独立的 vision 草稿确认流程，见 docs/capture-guide.md。
 """
 import csv
 import io
@@ -105,7 +100,7 @@ def _parse_value(field: str, raw: str):
 def parse_creator_center_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]:
     """
     解析创作者中心导出的 CSV，返回 (records, errors)。
-    records 的字段名对齐 models.VideoIn；未能识别的原始列整体存进 raw_data，不丢数据。
+    records 的字段名对齐作品指标；未能识别的原始列整体存进 raw_data，不丢数据。
     单行解析失败不再让整个导入报错——记进 errors（带行号和原因），其余行照常导入。
     """
     text = file_bytes.decode("utf-8-sig", errors="ignore")
@@ -119,7 +114,7 @@ def parse_creator_center_csv(file_bytes: bytes) -> tuple[list[dict], list[dict]]
     if "title" not in col_map or "publish_date" not in col_map:
         raise ValueError(
             "CSV 里没找到标题/发布时间对应的列。"
-            "请检查表头是否被改名，或者在 ingestion.py 的 COLUMN_ALIASES 里加上你的实际表头。"
+            "这里需要每行一条作品的 CSV；只有日期和播放量的账号统计表暂不支持。"
         )
 
     records, errors = [], []

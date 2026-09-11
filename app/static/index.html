@@ -98,7 +98,7 @@
           <label>配乐<input id="pf-music" type="text"></label>
           <label>核心抓人点<textarea id="pf-hook_description" rows="2"></textarea></label>
           <label>内容方向标签<input id="pf-content_pillar" type="text" placeholder="例如：体态反差 / 买车避坑"></label>
-          <button class="primary" onclick="saveContentProfile()">保存内容画像</button>
+          <button class="primary" onclick="saveContentProfile(this)">保存内容画像</button>
         </div>
 
         <div class="profile-section">
@@ -113,7 +113,7 @@
             <label>主页访问<input id="sn-profile_visits" type="number" value="0"></label>
             <label>涨粉<input id="sn-new_followers" type="number" value="0"></label>
           </div>
-          <button class="primary" onclick="addSnapshot()">记录快照（当前时间）</button>
+          <button class="primary" onclick="addSnapshot(this)">记录快照（当前时间）</button>
           <ul id="snapshot-list" class="snapshot-list"></ul>
         </div>
       </details>

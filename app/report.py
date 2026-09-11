@@ -92,12 +92,12 @@ def _render_result(atype: str, d) -> str:
 
     if atype == "pool_diagnosis":
         shape = d.get("curve_shape") or "—"
-        warn = " warn" if any(k in str(shape) for k in ("限流", "断崖", "冻结")) else ""
+        warn = " warn" if any(k in str(shape) for k in ("限流", "断崖", "冻结", "数据异常")) else ""
         h = f'<h3>扩散曲线形状 <span class="confidence">置信度 {_esc(d.get("shape_confidence"))}</span></h3>'
         h += f'<p><span class="badge{warn}">{_esc(shape)}</span></p>'
         h += _kv("扩散阶段", d.get("diffusion_stage"))
         h += _kv("卡点信号", d.get("bottleneck_signal") or "没有明显卡点")
-        h += _kv("限流vs衰减", d.get("throttle_vs_decay"))
+        h += _kv("原因与证据", d.get("throttle_vs_decay"))
         h += _titled_ul("推动继续扩散的改动", d.get("unlock_actions"))
         if d.get("caveat"):
             h += f'<div class="caveat">{_esc(d.get("caveat"))}</div>'

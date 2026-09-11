@@ -1,27 +1,19 @@
 """
-DEMO 数据播种脚本 —— 仅供本地压测，不要用于真实数据。
+DEMO 数据播种脚本 —— 只创建全新的演示库，不覆盖任何已有文件。
 
-跑法（必须用一次性测试库，别污染真实 douyin.db）：
-    SHIOME_DB_PATH=test_output/2026-07-02_Test.db python -m scripts.seed_demo
+跑法（PowerShell）：
+    $env:SHIOME_DB_PATH='work/demo.db'
+    python -m scripts.seed_demo
 
-安全保护：没设 SHIOME_DB_PATH 时直接拒绝执行，避免误写真实库。
+安全保护：没设 SHIOME_DB_PATH 或目标文件已存在时拒绝执行。
 
-它会（在测试库里）：建表 → 清空旧数据 → 建 1 个 demo 账号 → 插 1 个异常期 → 插 5 条 demo 作品
+它会：建表 → 填写 demo 账号 → 插 1 个异常期 → 插 5 条 demo 作品
 （其中 2 条带内容画像字段，1 条落在异常期）→ 给"体态反差"那条挂 3 个台阶式爬升快照。
-5 条视频刻意覆盖不同形态：健康爬升 / 高播放低意向(泛量) / 异常期冻结 / 中等 / 自然衰减。
+5 条作品覆盖多种表现：持续增长 / 高播放低关注 / 异常期 / 中等 / 较低播放。
 """
 import os
 
-# 安全闸：只允许写入显式指定的测试库
-if not os.environ.get("SHIOME_DB_PATH"):
-    raise SystemExit(
-        "拒绝执行：请先设置 SHIOME_DB_PATH 指向一次性测试库，避免污染真实 douyin.db。\n"
-        "例：SHIOME_DB_PATH=test_output/2026-07-02_Test.db python -m scripts.seed_demo"
-    )
-
-from app.database import init_db, get_conn, post_falls_in_anomaly, DB_PATH
-
-DEMO_ANOMALY = ("2026-05-01", "2026-05-07", "DEMO：新号 IP+地理标签触发限流")
+DEMO_ANOMALY = ("2026-05-01", "2026-05-07", "DEMO：记录方式变化，暂不纳入基线；原因未证实")
 
 # 发布侧字段（平台量出来的数字）
 POST_COLS = [
@@ -33,10 +25,10 @@ POST_COLS = [
 CREATIVE_COLS = ["content_summary", "on_screen_text", "music",
                  "hook_description", "content_pillar"]
 
-DEMO_PERSONA = "DEMO 人设：面向小众高意向人群的生活方式顾问，精准触达优先于泛量增长。"
+DEMO_PERSONA = "DEMO 人设：分享生活记录和实用经验，寻找可以持续制作的内容方向。"
 
 DEMO_VIDEOS = [
-    # 1) 健康爬升 + 高精准信号（下面挂快照的就是这条）
+    # 1) 增长与关注表现较好（下面挂快照的就是这条）
     {
         "platform": "douyin", "title": "体态反差开场：3个月身材变化实录",
         "publish_date": "2026-06-20", "duration_sec": 34, "plays": 42000, "likes": 1500,
@@ -47,7 +39,7 @@ DEMO_VIDEOS = [
         "on_screen_text": "3个月 -8kg｜每天多算这一步", "music": "轻鼓点 up-tempo",
         "hook_description": "前2秒体型反差画面", "content_pillar": "体态反差",
     },
-    # 2) 高播放低意向（泛量陷阱）
+    # 2) 高播放、关注转化较低
     {
         "platform": "douyin", "title": "热量计算器实测：便利店午餐怎么选",
         "publish_date": "2026-06-15", "duration_sec": 41, "plays": 88000, "likes": 3000,
@@ -58,7 +50,7 @@ DEMO_VIDEOS = [
         "on_screen_text": "这顿 620 大卡", "music": "热门卡点音",
         "hook_description": "悬念式提问'哪个更肥'", "content_pillar": "系统感数据",
     },
-    # 3) 异常期内 —— 冻结/限流形态
+    # 3) 已标记异常期；低播放本身不能说明原因
     {
         "platform": "douyin", "title": "在日买房避坑：地段 vs 预算怎么权衡",
         "publish_date": "2026-05-03", "duration_sec": 58, "plays": 600, "likes": 20,
@@ -93,19 +85,26 @@ DEMO_SNAPSHOTS = [
 
 
 def main():
+    if not os.environ.get("SHIOME_DB_PATH"):
+        raise SystemExit("拒绝执行：请设置 SHIOME_DB_PATH 指向尚不存在的演示库。")
+    from app.database import init_db, get_conn, post_falls_in_anomaly, DB_PATH
+    from app.migrations import ensure_default_account
+
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        # Exclusive creation also closes the race between checking and writing.
+        with DB_PATH.open("xb"):
+            pass
+    except FileExistsError:
+        raise SystemExit("拒绝执行：目标已存在，请选择新的演示库路径。")
     init_db()
     with get_conn() as conn:
-        # 测试库是一次性的：清空后重播，保证可重复运行
-        for t in ("post_snapshots", "analysis_results", "posts", "creatives",
-                  "anomaly_periods", "creator_notes", "account_metrics", "accounts"):
-            conn.execute(f"DELETE FROM {t}")
-
-        cur = conn.execute(
-            """INSERT INTO accounts (owner_id, platform, display_name, persona, goal_note)
-               VALUES ('local', 'douyin', 'DEMO 账号', ?, '高意向咨询数 > 粉丝数')""",
-            (DEMO_PERSONA,),
+        account_id = ensure_default_account(conn)
+        conn.execute(
+            """UPDATE accounts SET display_name='DEMO 账号', persona=?,
+               goal_note='稳定内容方向，提升观看和涨粉' WHERE id=?""",
+            (DEMO_PERSONA, account_id),
         )
-        account_id = cur.lastrowid
 
         conn.execute(
             "INSERT INTO anomaly_periods (start_date, end_date, reason) VALUES (?,?,?)",

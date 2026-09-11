@@ -30,6 +30,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 - Screenshot confirmation preserves duration, uses the phone's local observation time,
   escapes quoted titles, prevents repeated submissions and checks required identity fields.
 - Screenshot recognition runs outside the event loop; uploads have a 10 MB image limit.
+- Late detail and analysis responses no longer overwrite another selection. Profile and
+  snapshot saves show retryable failures; repeated clicks and in-flight analysis requests are guarded.
+- Demo seeding refuses every existing file instead of clearing its contents.
+
+**Changed**
+- Detail metrics now emphasize viewing and follower growth. Analyses follow account goals
+  and describe observed curves without treating their shape as evidence of moderation.
+- Consolidated current design, capture guidance and roadmap; removed the obsolete memo,
+  duplicate research prompt and unused creator-context aggregation code. Migrations remain intact.
 
 **Notes**
 - Hosting and an offsite backup destination still need to be provisioned for a live instance.
@@ -190,6 +199,12 @@ Initial public release of the runnable skeleton.
 **修复**
 - 截图确认保留作品时长，使用手机本地观察时间，正确处理带引号的标题，防重复点击及身份字段缺失。
 - 截图识别移出事件循环，单张图片限制为 10 MB。
+- 延迟的作品详情和分析响应不再覆盖新选择；画像/快照保存失败可重试，阻止重复点击及重复发起进行中的分析。
+- 演示播种命令拒绝已有文件，不再清空目标数据库。
+
+**调整**
+- 详情优先展示观看与涨粉指标；分析遵循账号目标，不再用曲线形状直接推断限流或审核。
+- 统一当前设计、采集指南与路线图；删除旧备忘、重复研究 Prompt 和未调用的上下文组装函数，保留迁移兼容逻辑。
 
 **说明**
 - 实例正式上线仍需配置托管位置及异地备份目标。
