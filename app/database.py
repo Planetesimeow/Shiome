@@ -206,6 +206,24 @@ CREATE TABLE IF NOT EXISTS creator_notes (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 每一次模型调用的账本。分析结果自己也存了 token 数，但那份只覆盖分析：
+-- 截图提取不落 analysis_results（它产出的是待确认草稿），而它很可能是花销大头。
+-- 只统计分析的话，账单上最大的一块是看不见的。
+CREATE TABLE IF NOT EXISTS api_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    month TEXT NOT NULL,                 -- YYYY-MM，按月加总用
+    provider TEXT NOT NULL,              -- anthropic / gemini
+    model TEXT,
+    kind TEXT,                           -- analysis / vision_extract
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cost_usd REAL,                       -- 认不出价格就是 NULL，不猜成 0
+    duration_ms INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_usage_month ON api_usage(month);
+
 -- 记一笔哪些结构性迁移跑过了，迁移脚本靠它保证只跑一次。
 CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,

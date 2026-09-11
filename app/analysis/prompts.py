@@ -174,7 +174,7 @@ def _extract_json(text: str) -> str:
 
 def call_claude_json(system: str, user_content: str, schema: dict | None = None,
                      images: list[tuple[str, str]] | None = None,
-                     model: str | None = None) -> dict:
+                     model: str | None = None, kind: str = "analysis") -> dict:
     """
     调用 Claude 拿结构化结果。
 
@@ -225,6 +225,11 @@ def call_claude_json(system: str, user_content: str, schema: dict | None = None,
         "output_tokens": resp.usage.output_tokens,
         "duration_ms": int((time.time() - t0) * 1000),
     }
+    # 记账。分析结果之后可能被覆盖或删掉，但钱已经花了 —— 账本要独立留存。
+    from app.usage import record_usage
+    with get_conn() as conn:
+        record_usage(conn, "anthropic", use_model, kind, meta["input_tokens"],
+                     meta["output_tokens"], meta["duration_ms"])
 
     result = None
     if schema is not None:

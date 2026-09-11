@@ -216,6 +216,12 @@ def _extract_with_gemini(media_type: str, b64: str) -> dict:
         "output_tokens": getattr(um, "candidates_token_count", None),
         "duration_ms": int((time.time() - t0) * 1000),
     }
+    from app.database import get_conn
+    from app.usage import record_usage
+    with get_conn() as conn:
+        record_usage(conn, "gemini", VISION_MODEL, "vision_extract",
+                     meta["input_tokens"], meta["output_tokens"], meta["duration_ms"])
+
     try:
         result = json.loads(resp.text)
     except (json.JSONDecodeError, TypeError):
@@ -237,4 +243,5 @@ def extract_screenshot(file_bytes: bytes, content_type: str | None = None) -> di
         schema=EXTRACTION_SCHEMA,
         images=[(media_type, b64)],
         model=VISION_MODEL,
+        kind="vision_extract",
     )

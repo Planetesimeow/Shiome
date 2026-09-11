@@ -38,6 +38,7 @@ from app.ingestion import parse_creator_center_csv
 from app.analysis.prompts import compute_baseline, get_account
 from app.analysis.registry import ANALYSES, list_analyses, POST_SCOPE, ACCOUNT_SCOPE
 from app.report import build_report_html
+from app.usage import budget_blocked, month_spend
 
 
 AUTH = AuthConfig()
@@ -551,6 +552,8 @@ def run_post_analysis(post_id: int, analysis_type: str):
     if not spec or spec["scope"] != POST_SCOPE:
         raise HTTPException(404, f"没有这个单条作品分析：{analysis_type}")
     with get_conn() as conn:
+        if (blocked := budget_blocked(conn)) is not None:
+            return blocked
         row = conn.execute("SELECT account_id FROM posts WHERE id = ?", (post_id,)).fetchone()
         if not row:
             raise HTTPException(404, "post not found")
@@ -565,6 +568,8 @@ def run_account_analysis(analysis_type: str, account_id: int | None = None,
     if not spec or spec["scope"] != ACCOUNT_SCOPE:
         raise HTTPException(404, f"没有这个账号级分析：{analysis_type}")
     with get_conn() as conn:
+        if (blocked := budget_blocked(conn)) is not None:
+            return blocked
         account = _resolve_account(conn, account_id)
         return spec["run"](conn, account, limit)
 
@@ -591,6 +596,13 @@ def get_results(post_id: int | None = None, account_id: int | None = None,
             d["result_json"] = json.loads(d["result_json"])
             out.append(d)
         return out
+
+
+@app.get("/api/usage")
+def get_usage(month: str | None = None):
+    """本月 API 花销。没设上限时 limit_usd 为 null —— 统计照常，只是不拦。"""
+    with get_conn() as conn:
+        return month_spend(conn, month)
 
 
 @app.get("/api/baseline")
@@ -621,6 +633,9 @@ def trend_data(account_id: int | None = None):
 @app.post("/api/vision/extract")
 async def vision_extract(file: UploadFile = File(...)):
     """一张创作者中心截图 → 结构化草稿。只提取、不入库——数字必须经人确认。"""
+    with get_conn() as conn:
+        if (blocked := budget_blocked(conn)) is not None:
+            return blocked
     content = await file.read()
     try:
         return extract_screenshot(content, file.content_type)

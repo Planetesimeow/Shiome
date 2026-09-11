@@ -632,6 +632,26 @@ function discardVisionDraft(cardId) {
   if (!panel.children.length) panel.style.display = "none";
 }
 
+// ---------- API 花销 ----------
+
+async function loadUsage() {
+  const el = document.getElementById("usage-line");
+  if (!el) return;
+  try {
+    const u = await api("/api/usage");
+    const spent = `$${u.spent_usd.toFixed(2)}`;
+    el.textContent = u.limit_usd != null
+      ? `本月 ${spent} / $${u.limit_usd.toFixed(2)}`
+      : `本月 ${spent}`;
+    // 快到上限时变色：钱花完了才发现，比提前看见要糟
+    el.style.color = u.over_budget ? "var(--danger)"
+      : (u.limit_usd != null && u.spent_usd / u.limit_usd > 0.8) ? "var(--accent)" : "";
+    el.title = u.unpriced_calls
+      ? `${u.calls} 次调用，其中 ${u.unpriced_calls} 次没有价目、未计入金额`
+      : `${u.calls} 次调用`;
+  } catch (e) { /* 拿不到就不显示 */ }
+}
+
 // ---------- 鉴权 ----------
 
 // 只在服务端确实配了口令时才显示退出按钮：本机跑的时候没有登录这回事，
@@ -650,6 +670,7 @@ async function logout() {
 
 // ---------- 初始化 ----------
 
+loadUsage();
 initAuth();
 loadVideos();
 loadTrendChart();
