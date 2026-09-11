@@ -11,7 +11,7 @@ v2 的核心变化：一张 videos 表拆成四张。
 为什么要拆：一条视频同时发抖音/小红书/B站，是"一个创作决定 + 三套完全不同的数字"。
 混在一张表里，内容画像要填三遍，而且永远问不出"同一个钩子在这个平台活了、在那个平台
 死了，说明两边分别推给了谁"——而那个问题才是把三个平台放进一个工具的理由。
-详见 docs/roadmap-v2.md。
+详见 docs/design.md。
 """
 import os
 import shutil
@@ -28,7 +28,7 @@ DB_PATH = Path(os.environ.get("SHIOME_DB_PATH", _DEFAULT_DB_PATH))
 
 SCHEMA = """
 -- 一个创作者在一个平台上的账号。owner_id 是多用户的预留：
--- 今天只有一个人用，但不写任何"假设只有一个用户"的查询，将来就不用重写。
+-- 当前鉴权与前端仍是单用户；预留字段不代表已实现租户隔离。
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id TEXT NOT NULL DEFAULT 'local',
@@ -274,12 +274,8 @@ def backup_db(keep: int = 10, tag: str | None = None):
     dest = backup_dir / f"{name}{DB_PATH.suffix}"
     if dest.exists():
         return None  # 今天已经备份过（同 tag）
-    src, dst = sqlite3.connect(DB_PATH), sqlite3.connect(dest)
-    try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()
+    from app.backups import snapshot
+    snapshot(DB_PATH, dest)
     if tag is None:  # 只轮转每日备份，带 tag 的迁移前备份一律保留
         for old in sorted(backup_dir.glob(f"{DB_PATH.stem}-20*{DB_PATH.suffix}"))[:-keep]:
             old.unlink()

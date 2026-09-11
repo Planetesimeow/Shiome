@@ -8,4 +8,4 @@
 
 改这里的时候一并更新 CHANGELOG.md 最新的版本标题 —— tests/test_version.py 会盯着这两处一致。
 """
-__version__ = "0.3.0-dev.2"
+__version__ = "0.3.0-dev.3"

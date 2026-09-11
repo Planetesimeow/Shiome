@@ -2,36 +2,47 @@
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#121110">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="潮目">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/img/favicon.png">
 <title>潮目 Shiome · 创作者数据分析</title>
 <link rel="icon" type="image/png" href="/static/img/favicon.png">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/vendor/chart.umd.min.js"></script>
 </head>
-<body>
+<body data-mobile-view="overview">
 
 <input type="file" id="csv-input" accept=".csv" hidden>
 <input type="file" id="shot-input" accept="image/*" multiple hidden>
 
 <header>
-  <div class="brand-wrap" onclick="showOverview()" title="返回账号总览">
+  <button class="brand-wrap" onclick="showOverview()" title="返回账号总览" aria-label="返回账号总览">
     <img class="brand-logo" src="/static/img/logo.png" alt="潮目 Shiome">
-    <span class="brand-sub" id="brand-sub">満電暴走兔 · 创作者数据分析</span>
-  </div>
+    <span class="brand-sub" id="brand-sub">创作者数据分析</span>
+  </button>
   <div class="header-actions">
     <span class="status" id="usage-line" title="本月 API 花销"></span>
-    <span class="status" id="status-line">加载中...</span>
-    <label class="btn-ghost" for="shot-input">上传截图</label>
-    <label class="btn-ghost" for="csv-input">导入 CSV</label>
-    <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出报告</a>
-    <button class="btn-ghost" id="logout-btn" style="display:none;" onclick="logout()">退出</button>
+    <details class="tools-menu" id="tools-menu">
+      <summary class="btn-ghost">工具</summary>
+      <div class="tools-menu-items">
+        <button class="btn-ghost" onclick="document.getElementById('csv-input').click()">导入 CSV</button>
+        <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出报告</a>
+        <a class="btn-ghost" href="/api/backup" download>下载数据备份</a>
+        <button class="btn-ghost" id="logout-btn" style="display:none;" onclick="logout()">退出登录</button>
+      </div>
+    </details>
   </div>
 </header>
+<div class="app-status" id="status-line" role="status" aria-live="polite">加载中...</div>
+<div class="app-status" id="reauth-notice" role="alert" hidden>登录已过期，请<a href="/login" target="_blank" rel="noopener">重新登录</a>后重试。当前草稿请勿刷新。</div>
 
 <main>
   <section class="panel" id="left-panel">
     <div class="panel-header">
-      <h2>视频列表</h2>
+      <h2>作品列表</h2>
       <span class="count" id="video-count"></span>
     </div>
     <ul class="video-list" id="video-list"></ul>
@@ -57,15 +68,25 @@
 
     <div id="dup-banner" class="dup-banner" style="display:none;"></div>
 
+    <div id="capture-intro" class="capture-intro">
+      <h2>截图录入</h2>
+      <p>选择创作者中心截图，提取后核对数字，再确认入库。</p>
+      <button class="primary" onclick="document.getElementById('shot-input').click()">从相册选择截图</button>
+      <p class="hero-hint">支持多选 · 每张不超过 10 MB · 识别会计入 API 花销</p>
+    </div>
     <div id="vision-panel" style="display:none;"></div>
 
-    <div class="chart-wrap">
+    <div class="chart-wrap" id="overview-chart">
       <div class="chart-title">播放量 &amp; 完播率趋势</div>
       <canvas id="trend-chart"></canvas>
       <div class="legend-note"><span class="swatch"></span>红色三角 = 已标记的异常期（不计入基线）</div>
     </div>
 
     <div id="detail-view" style="display:none;">
+      <div class="detail-heading">
+        <button class="btn-ghost mobile-back" onclick="showMobileView('posts')">返回作品</button>
+        <h2 id="detail-title"></h2>
+      </div>
       <details class="profile-panel" id="profile-panel">
         <summary>内容画像 &amp; 快照记录</summary>
 
@@ -77,7 +98,7 @@
           <label>配乐<input id="pf-music" type="text"></label>
           <label>核心抓人点<textarea id="pf-hook_description" rows="2"></textarea></label>
           <label>内容方向标签<input id="pf-content_pillar" type="text" placeholder="例如：体态反差 / 买车避坑"></label>
-          <button class="primary" onclick="saveContentProfile()">保存内容画像</button>
+          <button class="primary" onclick="saveContentProfile(this)">保存内容画像</button>
         </div>
 
         <div class="profile-section">
@@ -92,7 +113,7 @@
             <label>主页访问<input id="sn-profile_visits" type="number" value="0"></label>
             <label>涨粉<input id="sn-new_followers" type="number" value="0"></label>
           </div>
-          <button class="primary" onclick="addSnapshot()">记录快照（当前时间）</button>
+          <button class="primary" onclick="addSnapshot(this)">记录快照（当前时间）</button>
           <ul id="snapshot-list" class="snapshot-list"></ul>
         </div>
       </details>
@@ -105,16 +126,21 @@
       </div>
 
       <div class="tabs">
-        <div class="tab active" data-type="enhancement">增强方向</div>
-        <div class="tab" data-type="trend_forecast">流量预估</div>
-        <div class="tab" data-type="pool_diagnosis">扩散诊断</div>
-        <div class="tab" data-type="content_ideas">内容建议</div>
-        <div class="tab" data-type="creator_profile">创作者画像</div>
+        <button class="tab active" data-type="enhancement">增强方向</button>
+        <button class="tab" data-type="trend_forecast">流量预估</button>
+        <button class="tab" data-type="pool_diagnosis">扩散诊断</button>
+        <button class="tab" data-type="content_ideas">内容建议</button>
+        <button class="tab" data-type="creator_profile">创作者画像</button>
       </div>
       <div id="result-container"></div>
     </div>
   </section>
 </main>
+<nav class="mobile-nav" aria-label="主要导航">
+  <button onclick="showOverview()" data-view="overview" aria-current="page">总览</button>
+  <button onclick="showMobileView('posts')" data-view="posts">作品</button>
+  <button onclick="showMobileView('capture')" data-view="capture">截图<span id="draft-count"></span></button>
+</nav>
 
 <script src="/static/dashboard.js"></script>
 </body>

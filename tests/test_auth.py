@@ -1,11 +1,9 @@
 """
 鉴权。
 
-这块从第一版 MEMO 起就写着「远程部署前必须补上」。测试覆盖三件事：
+测试覆盖口令、会话、限速及远程访问边界：
 口令和会话本身的密码学部分、没配鉴权时的兜底行为、以及两条通道（cookie / Bearer）。
 """
-import time
-
 import pytest
 from fastapi.testclient import TestClient
 
