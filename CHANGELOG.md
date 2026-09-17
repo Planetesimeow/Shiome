@@ -14,6 +14,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.5] — 2026-09-17
+
+**Added**
+- First-server deployment guidance: temporary HTTPS without a domain registration,
+  SSH key access, host preparation, and checks for persistence and offsite recovery.
+  Explain the limited functionality available before configuring a model API key.
+
 ### [0.3.0-dev.4] — 2026-09-11
 
 **Changed**
@@ -194,6 +201,12 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0-dev.5] — 2026-09-17
+
+**新增**
+- 首台服务器上线说明：免注册域名的临时 HTTPS、SSH 密钥登录、主机准备，以及数据持久化
+  和异地恢复验收；明确尚未配置模型 API key 时可使用的功能范围。
 
 ### [0.3.0-dev.4] — 2026-09-11
 
