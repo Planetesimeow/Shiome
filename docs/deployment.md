@@ -153,9 +153,10 @@ curl --fail https://shiome.example.com/healthz
 需要无人值守备份时，在确定自己的对象存储/第二台服务器后接入外部定时任务，将每天的完整快照加密上传；
 在目的地尚未配置前，不能宣称自动异地备份已经生效。
 
-恢复时先停止应用，将下载的备份挂载进容器，运行 `python -m scripts.restore <备份> <新路径>`，
-再修改 `SHIOME_DB_PATH`、启动并核对作品/快照数量。脚本会校验完整性和 Shiome 表结构，拒绝覆盖已有文件。
-至少实际恢复一次，确认备份可用。
+恢复个人数据时先运行 `python -m scripts.restore <备份> <新路径>`，在新文件验证完整性与记录数量。
+脚本校验 Shiome 表结构并拒绝覆盖已有文件。验证后停止应用，另存该用户的旧文件，将恢复文件放回
+该用户原有的数据路径，检查归属和权限后启动。多人实例不能仅修改 `SHIOME_DB_PATH` 来切换到个人备份；
+身份库与各用户目录必须保持对应关系。整站恢复按[账号与隔离说明](multi-user.md)执行。
 
 ## 手机验收
 
@@ -168,7 +169,8 @@ curl --fail https://shiome.example.com/healthz
    入口需要联网，不提供离线分析或后台上传。系统后台可能暂停识别请求，等待完成再切走更稳妥。
 
 自动化浏览器检查覆盖 360 / 390 / 430 / 1280 像素、Chromium / WebKit：登录、切换视图、保留草稿、
-会话过期后的重新登录、编辑保存、作品详情、下载备份及退出。测试识别使用固定数据，不调用付费模型。
+会话过期后的重新登录、编辑保存、作品详情、下载备份及退出；也覆盖管理员设置、邀请注册、修改密码和账号切换。
+测试识别使用固定数据，不调用付费模型。
 自动化不能替代真实手机相册权限、真实域名证书及实际模型 key 的验收。
 
 ## English quick reference
@@ -179,6 +181,8 @@ includes Caddy; managed hosting should supply its own HTTPS ingress. `PORT` is s
 readiness is `/healthz`, and production refuses incomplete authentication configuration.
 
 Daily snapshots are local only. Authenticated `/api/backup` downloads a fresh, verified
-database for offsite storage. `python -m scripts.restore SOURCE NEW_PATH` restores without
-overwriting existing databases. Configure an external destination before claiming automatic
-offsite backups. Never remove production volumes when updating the application.
+personal database for offsite storage. `python -m scripts.restore SOURCE NEW_PATH` validates a restore
+without overwriting existing databases. Stop the app before replacing that user's original data file;
+preserve its path and permissions. Whole-service recovery also needs the identity database,
+all user files and the unchanged session/encryption secret. Configure an external destination
+before claiming automatic offsite backups. Never remove production volumes when updating the application.
