@@ -1,6 +1,6 @@
 # 当前设计 / Current design
 
-更新于 2026-09-11。这里描述现有实现；待做事项见[路线图](roadmap-v2.md)，历史取舍见[开发日志](devlog/README.md)。旧版 `MEMO.md` 已合并到本文，可从 Git 历史查询。
+更新于 2026-09-17。这里描述现有实现；待做事项见[路线图](roadmap-v2.md)，历史取舍见[开发日志](devlog/README.md)。
 
 ## 产品目标
 
@@ -26,7 +26,7 @@
 
 ## 部署边界
 
-FastAPI + SQLite + 原生 HTML/CSS/JavaScript。当前为单用户、单实例、单 worker；`owner_id` 及预留对话表不代表已经支持多租户或聊天。保留迁移、备份和既有表结构，以兼容已保存的数据。
+FastAPI + SQLite + 原生 HTML/CSS/JavaScript。当前为单用户网页版、单实例、单 worker；`owner_id` 不代表已经支持多租户。聊天功能尚未实现，新库不再提前创建对话占位表；旧版本已创建的表和数据保留。迁移、备份和历史数据读取继续兼容。
 
 公网入口通过 Caddy 提供 HTTPS；生产启动检查口令哈希和会话密钥。数据库放在持久卷，运行期间每天备份，可登录下载并恢复到新文件。异地备份仍需另行配置，详见[部署指南](deployment.md)。
 
@@ -40,4 +40,4 @@ Screenshots produce editable drafts before saving. Accounts, creative descriptio
 
 Baselines use the latest 20 normal posts within one account. Matching by post age, format and duration, per-metric sample counts, missing-value migration and grouped screenshot capture remain pending. Curve shape alone cannot establish moderation or distribution causes. Existing analysis records and schema migrations remain readable.
 
-Deployment is one authenticated FastAPI worker with persistent SQLite, Caddy HTTPS and daily local backups. Reserved ownership and conversation fields do not provide multi-user isolation or chat. Offsite recovery and an actual phone session must be verified on the provisioned server. API budget checks use recorded costs and cannot guarantee an exact provider bill.
+Deployment is one authenticated FastAPI worker with persistent SQLite, Caddy HTTPS and daily local backups. Reserved ownership fields do not provide multi-user isolation; chat is not implemented. New databases no longer create speculative conversation tables, while existing tables and data remain intact. The creator's VPS restart, offsite backup restoration and iPhone upload/recognition have been verified; continuous automatic offsite backups remain unconfigured. API budget checks use recorded costs and cannot guarantee an exact provider bill.

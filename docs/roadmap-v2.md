@@ -1,6 +1,6 @@
 # 路线图 / Roadmap
 
-更新于 2026-09-11。保留原文件名以兼容已有链接；本文只维护当前状态和后续工作。v1 到 v2 的建模过程见[开发日志 001](devlog/001-2026-09-02-creator-data-model.md)。
+更新于 2026-09-17。保留原文件名以兼容已有链接；本文只维护当前状态和后续工作。v1 到 v2 的建模过程见[开发日志 001](devlog/001-2026-09-02-creator-data-model.md)。
 
 ## 当前目标
 
@@ -12,7 +12,7 @@
 
 账号、创作物、平台发布与快照分离；人设存为账号数据；基线按账号隔离；重复作品合并；旧数据库迁移与测试。已有迁移与历史表保留。当前多平台数据结构不等于各平台完整支持。
 
-## Phase 1：上线与手机试运行 — 进行中
+## Phase 1：上线与手机试运行 — 已上线，持续观察
 
 已完成代码：
 
@@ -22,14 +22,16 @@
 - API 用量记录、月度预算、小服务器配置与部署说明。
 - Python、两类浏览器及容器部署自动验证。
 
-剩余验收：
+上线验收（2026-09-17）：
 
-- 确认服务器实际售价、续费和日本访问情况；配置服务器、域名与密钥。
-- 使用公网 HTTPS 地址在真实手机完成登录 → 识别 → 确认 → 查看。
-- 重启后数据仍在；下载到另一台设备并完成恢复演练。
-- 观察少量真实调用的识别质量、速度和费用，再决定是否调整模型或额度。
+- VPS、HTTPS 和模型密钥已配置，服务器年付金额与续费金额已确认。
+- 创作者已在 iPhone 确认上传与真实截图识别正常；确认入库后的字段完整性继续随实际使用复核。
+- 整机重启后服务自动恢复、默认账号记录保留；数据库已下载到电脑并完成恢复演练。
 
-预算方向为约 20 元人民币/月，包括少量 AI 调用；当前只有费用方案，未购买服务器，也未产生可用的公网实例。自动异地备份尚未配置。原 Phase 2 的基础手机入口已提前完成。
+预算方向为约 20 元人民币/月，包括少量 AI 调用。当前服务器为 21.99 美元/年，应用的 AI 月度
+预算配置为 0.75 美元（按已记录费用检查，并非供应商账单硬上限）。持续自动异地备份尚未配置。
+继续观察识别质量、速度与真实费用，再决定是否调整模型或额度。原 Phase 2 的基础手机入口已提前完成。
+当前继续完善网页版，iPhone 可添加到主屏幕；原生安装包与商店上架暂不安排。
 
 ## Phase 2：可信采集与内容复盘
 
@@ -48,7 +50,7 @@
 ## 后续功能
 
 - **Phase 3 / 4：更多平台。** 小红书、B站的专属采集、口径、界面与分析，以及同一创作物跨平台比较。实际优先级按使用需求和数据决定，不预设某平台更适合增长或转化。
-- **Phase 5：对话式助手。** 围绕自己的内容与观察提问，引用有来源的数据，按需调用已有分析。可在需求明确时提前；数据库预留表不代表聊天已实现。
+- **Phase 5：对话式助手。** 围绕自己的内容与观察提问，引用有来源的数据，按需调用已有分析。可在需求明确时提前；届时再实现所需存储，新库不提前创建空的聊天表。
 - **目标选择与布局。** 在不同成功目标间切换；咨询、成交、收入等商业指标在目标需要时加入。
 
 暂不扩展多用户计费、自动抓平台数据、评论/私信全量采集、重视频处理和商业运营看板。先让单人手机采集与复盘形成稳定习惯。
@@ -57,7 +59,7 @@
 
 The current goal is sustainable content directions, viewing growth and follower growth. Future goal selection should change metrics, comparisons and recommendations, with audience fit and commercial outcomes available when relevant.
 
-Phase 0's data model and migrations are complete. Phase 1 has authentication, HTTPS/container configuration, phone workflows, persistent storage, backup/restore and API cost tracking. Provisioning, actual phone access, offsite recovery and real-use cost/quality checks remain pending. Basic mobile capture moved forward from Phase 2.
+Phase 0's data model and migrations are complete. Phase 1 is live: VPS provisioning, HTTPS, server restart recovery and offsite backup restoration have been verified. The creator confirmed real iPhone upload and screenshot recognition on September 17, 2026. Confirmation-field completeness, quality, speed and cost remain under observation; automatic offsite backups remain unconfigured. The current plan is to continue the web app with an iPhone home-screen entry, without scheduling native packages or store distribution. Basic mobile capture moved forward from Phase 2.
 
 Phase 2 prioritizes grouped screenshots, identity and observation tracking, missing-value semantics, retention/source/audience data, comparable baselines and follow-up content experiments. Account statistics and notes still need deliberate integration into analyses. Video-to-profile extraction remains future work.
 

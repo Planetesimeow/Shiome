@@ -73,10 +73,6 @@ header .status {
   color: var(--text-muted);
 }
 
-@media (max-width: 720px) {
-  .brand-sub { display: none; }
-}
-
 main {
   display: grid;
   grid-template-columns: 340px 1fr;
