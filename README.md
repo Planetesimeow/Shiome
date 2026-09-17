@@ -4,12 +4,12 @@
 
 帮助创作者找到稳定的内容方向，提升观看和涨粉。将创作者中心截图转成可核对的数据，结合内容描述和历史表现，按需生成分析。
 
-当前为**单用户试运行版本**，主要支持抖音。手机浏览器的登录、截图录入、作品查看与备份已实现；实际公网实例还需配置服务器、域名和凭据。版本见 [`app/__init__.py`](app/__init__.py)。
+当前为**单用户网页版试运行版本**，主要支持抖音。个人实例已于 2026-09-17 部署到 VPS，iPhone 上传与真实截图识别已验证；新建自己的实例请按[部署指南](docs/deployment.md)配置服务器、HTTPS 与凭据。版本见 [`app/__init__.py`](app/__init__.py)。
 
 ## 已有功能
 
 - 截图上传 → AI 提取 → 编辑确认 → 入库；多张逐张处理，私密作品跳过。
-- 作品级 CSV 导入、内容画像编辑、快照记录、疑似重复作品人工合并。
+- 内容画像编辑、快照记录、疑似重复作品人工合并。
 - 作品与创作物分离，同账号基线，异常期排除，播放与涨粉指标。
 - 增强方向、内容建议、流量预估、扩散诊断、创作者画像五类按需分析，以及 HTML 报告。
 - 手机总览 / 作品 / 截图导航；切换页面及重新登录时保留当前截图草稿。
@@ -51,7 +51,7 @@ cp .env.example .env
 | `docs/` | 当前设计、路线图、操作指南和开发记录 |
 | `userscreenshots/` | 本地真实截图，不提交 Git、不打入镜像 |
 
-截图确认时核对标题、时间、单位和统计口径，具体见[采集指南](docs/capture-guide.md)。CSV 必须包含作品标题和发布时间，格式参考 [`sample_import.csv`](tests/fixtures/sample_import.csv)；只有日期和播放量的账号汇总表不能作为作品导入。
+截图确认时核对标题、时间、单位和统计口径，具体见[采集指南](docs/capture-guide.md)。
 
 ## 验证
 
@@ -81,9 +81,9 @@ CI 覆盖 Python 3.11 / 3.12、Chromium / WebKit 的手机流程，以及实际 
 
 Shiome helps creators find repeatable content directions and improve viewing and follower growth. It turns creator-center screenshots into editable drafts, keeps post metrics separate from creative descriptions, and runs five analyses on demand.
 
-This is a single-user pilot, currently focused on Douyin. Mobile navigation, login, screenshot confirmation, metrics, snapshots, CSV import, reports, API cost tracking and backup tools are implemented. A live instance still requires a server, domain and credentials; see [deployment](docs/deployment.md).
+This is a single-user web pilot, currently focused on Douyin. The creator's VPS instance has been deployed, with real iPhone upload and screenshot recognition verified on September 17, 2026. Mobile navigation, login, screenshot confirmation, metrics, snapshots, reports, API cost tracking and backup tools are implemented. New installations require their own server, HTTPS and credentials; see [deployment](docs/deployment.md).
 
-Use Python 3.11 or 3.12 and the commands above. Browsing and manual editing do not require a model key. CSV files must contain one post per row with a title and publication date. Phone access requires configured authentication and HTTPS. Data defaults to `app/data/shiome.db`; personal screenshots, databases and secrets are excluded from Git and Docker images.
+Use Python 3.11 or 3.12 and the commands above. Browsing and manual editing do not require a model key. Phone access requires configured authentication and HTTPS. Data defaults to `app/data/shiome.db`; personal screenshots, databases and secrets are excluded from Git and Docker images.
 
 The [current design](docs/design.md) and [roadmap](docs/roadmap-v2.md) distinguish working features from pending screenshot grouping, missing-value handling, goal selection and additional platforms. Analyses are hypotheses based on supplied data, not measurements of a platform's internal algorithm.
 

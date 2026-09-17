@@ -14,10 +14,44 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.11] — 2026-09-18
+
+**Changed**
+- Consolidate the completed integration PRs into a direct Phase 1 release PR, preserving
+  their merge history and carrying the CSV removal and legacy cleanup into release.
+
+### [0.3.0-dev.10] — 2026-09-18
+
+**Changed**
+- Integrate the reviewed legacy cleanup on top of CSV removal, completing the pending changes for the Phase 1 release branch.
+
+### [0.3.0-dev.9] — 2026-09-18
+
+**Changed**
+- Integrate the reviewed CSV removal on top of the Phase 1 deployment integration, preserving the original removal commits.
+
 ### [0.3.0-dev.8] — 2026-09-18
 
 **Changed**
 - Integrate the remaining deployment guidance and stacked-branch workflow into the Phase 1 release sequence, preserving the original commits.
+
+### [0.3.0-dev.7] — 2026-09-17
+
+**Removed**
+- Unused analysis lookup wrapper, a superseded mobile CSS rule, and automatic creation
+  of unused conversation/message placeholder tables in new databases. Existing tables
+  and their data remain untouched; database adoption, migrations and backups stay supported.
+
+**Changed**
+- Replace pre-deployment status in current documentation with the verified VPS and iPhone
+  pilot status. Keep historical release notes and development logs as historical records.
+
+### [0.3.0-dev.6] — 2026-09-17
+
+**Removed**
+- CSV import from the dashboard, API, parser, fixtures and dedicated tests. Screenshots
+  remain the capture workflow; existing records, migration support and screenshot upserts
+  are preserved. Current documentation no longer advertises CSV import.
 
 ### [0.3.0-dev.5] — 2026-09-17
 
@@ -207,10 +241,42 @@ Initial public release of the runnable skeleton.
 
 ### [未发布]
 
+### [0.3.0-dev.11] — 2026-09-18
+
+**调整**
+- 将已完成的集成 PR 汇总为直接指向 Phase 1 release 的 PR，保留全部合并历史，
+  将 CSV 移除和旧版清理继续纳入 release。
+
+### [0.3.0-dev.10] — 2026-09-18
+
+**调整**
+- 在 CSV 移除之上接入已审查的旧版遗留清理，汇总尚未进入 Phase 1 release 的改动。
+
+### [0.3.0-dev.9] — 2026-09-18
+
+**调整**
+- 在 Phase 1 部署集成之上接入已审查的 CSV 完整移除，保留原始移除提交。
+
 ### [0.3.0-dev.8] — 2026-09-18
 
 **调整**
 - 将尚未进入 Phase 1 release 的部署说明和串联分支规范纳入集成序列，保留原始提交历史。
+
+### [0.3.0-dev.7] — 2026-09-17
+
+**移除**
+- 未使用的分析查询包装函数、已被覆盖的手机样式规则，以及新库中未接入功能的对话/消息
+  占位表创建代码。已有表和数据保持原状，旧库接续、迁移和备份恢复继续保留。
+
+**调整**
+- 当前文档改为已验证的 VPS 与 iPhone 试运行状态，清除仍声称尚未上线的描述。
+  历史更新记录和开发日志继续作为当时的记录保留。
+
+### [0.3.0-dev.6] — 2026-09-17
+
+**移除**
+- 完整移除 CSV 的界面入口、API、解析器、样例和专属测试；采集统一使用截图。
+  保留已有记录、迁移兼容与截图更新逻辑，同步删除当前文档里的 CSV 使用说明。
 
 ### [0.3.0-dev.5] — 2026-09-17
 
