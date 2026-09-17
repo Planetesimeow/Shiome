@@ -14,6 +14,25 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.8] — 2026-09-18
+
+**Changed**
+- Integrate the remaining deployment guidance and stacked-branch workflow into the Phase 1 release sequence, preserving the original commits.
+
+### [0.3.0-dev.5] — 2026-09-17
+
+**Added**
+- First-server deployment guidance: temporary HTTPS without a domain registration,
+  SSH key access, host preparation, and checks for persistence and offsite recovery.
+  Explain the limited functionality available before configuring a model API key.
+
+### [0.3.0-dev.4] — 2026-09-11
+
+**Changed**
+- Require a new branch for every new change, however small, based on and targeting the
+  preceding work branch. Document parent-first merging and defer branch deletion until
+  child PRs are retargeted; add the agreement to `AGENTS.md` for future collaborators.
+
 ### [0.3.0-dev.3] — 2026-09-11
 
 **Added**
@@ -187,6 +206,23 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0-dev.8] — 2026-09-18
+
+**调整**
+- 将尚未进入 Phase 1 release 的部署说明和串联分支规范纳入集成序列，保留原始提交历史。
+
+### [0.3.0-dev.5] — 2026-09-17
+
+**新增**
+- 首台服务器上线说明：免注册域名的临时 HTTPS、SSH 密钥登录、主机准备，以及数据持久化
+  和异地恢复验收；明确尚未配置模型 API key 时可使用的功能范围。
+
+### [0.3.0-dev.4] — 2026-09-11
+
+**调整**
+- 每个新改动无论大小，都从前一个工作分支新建分支，PR 指向前一个分支。明确先合父分支、
+  子 PR 改好目标后再删除父分支，并将约定写入 `AGENTS.md`，供后续协作者遵守。
 
 ### [0.3.0-dev.3] — 2026-09-11
 
