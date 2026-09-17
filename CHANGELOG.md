@@ -14,6 +14,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.11] — 2026-09-18
+
+**Changed**
+- Consolidate the completed integration PRs into a direct Phase 1 release PR, preserving
+  their merge history and carrying the CSV removal and legacy cleanup into release.
+
 ### [0.3.0-dev.10] — 2026-09-18
 
 **Changed**
@@ -234,6 +240,12 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0-dev.11] — 2026-09-18
+
+**调整**
+- 将已完成的集成 PR 汇总为直接指向 Phase 1 release 的 PR，保留全部合并历史，
+  将 CSV 移除和旧版清理继续纳入 release。
 
 ### [0.3.0-dev.10] — 2026-09-18
 
