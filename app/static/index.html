@@ -15,7 +15,6 @@
 </head>
 <body data-mobile-view="overview">
 
-<input type="file" id="csv-input" accept=".csv" hidden>
 <input type="file" id="shot-input" accept="image/*" multiple hidden>
 
 <header>
@@ -28,7 +27,6 @@
     <details class="tools-menu" id="tools-menu">
       <summary class="btn-ghost">工具</summary>
       <div class="tools-menu-items">
-        <button class="btn-ghost" onclick="document.getElementById('csv-input').click()">导入 CSV</button>
         <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出报告</a>
         <a class="btn-ghost" href="/api/backup" download>下载数据备份</a>
         <button class="btn-ghost" id="logout-btn" style="display:none;" onclick="logout()">退出登录</button>
@@ -60,7 +58,6 @@
       </div>
       <div class="hero-actions">
         <label class="primary" for="shot-input">上传创作者中心截图</label>
-        <label class="btn-ghost" for="csv-input">导入 CSV</label>
         <a class="btn-ghost" href="/api/report" target="_blank" rel="noopener">导出分析报告</a>
       </div>
       <p class="hero-hint">手机/电脑截图都行 · 提取后需你确认才入库 · 私密视频自动跳过</p>
