@@ -30,7 +30,7 @@ def _make(client, account_id, **kw):
     return client.post("/api/posts", json=body).json()["id"]
 
 
-def test_upsert_matches_truncated_title_instead_of_duplicating(client, account_id, csv_bytes):
+def test_upsert_matches_truncated_title_instead_of_duplicating(client, account_id):
     """同一条作品先以完整标题入库，再以截断标题同步，应该更新而不是新建。"""
     _make(client, account_id, title=FULL, publish_date="2026-07-06", plays=5359)
     before = len(client.get("/api/posts").json())

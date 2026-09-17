@@ -38,7 +38,6 @@
 - 近 7 日与近 30 日不能拼成同一记录；局部图窗也不代表完整周期。
 - 发布时间、页面截止时间、截图时间分开核对；来源不清的时间保持待确认。
 - 缺失不是零，净增粉不是新增关注；作品指标与账号汇总分开。
-- 只有「日期 + 播放量」的账号导出 CSV 不能从作品导入入口使用。作品 CSV 示例见 [`sample_import.csv`](../tests/fixtures/sample_import.csv)。
 
 后续实现顺序见[路线图](roadmap-v2.md)。
 
@@ -48,4 +47,4 @@ Use the phone capture tab or desktop screenshot button, review each extracted dr
 
 Start with post overview and retention at roughly 24 hours, then overview, sources/search terms and follower outcomes at roughly 72 hours. Add weekly post-list and seven-day account summaries; detailed audience breakdowns are selective. These are collection suggestions, not platform timing rules.
 
-Grouped screenshots, identity binding for continuation pages, and complete source/retention/audience fields remain pending. Keep supplementary originals. Preserve labels, units, axes and periods; never mix cumulative with hourly values, account totals with post data, or net followers with new followers. CSV import expects one identified post per row.
+Grouped screenshots, identity binding for continuation pages, and complete source/retention/audience fields remain pending. Keep supplementary originals. Preserve labels, units, axes and periods; never mix cumulative with hourly values, account totals with post data, or net followers with new followers.
