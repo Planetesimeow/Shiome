@@ -43,6 +43,10 @@
     margin-bottom: 18px;
   }
   .login-card input:focus { outline: none; border-color: var(--accent); }
+  .login-card h1 { font-size: 22px; margin: 0 0 12px; }
+  .login-card p { color: var(--text-muted); font-size: 14px; line-height: 1.6; margin: 0 0 24px; }
+  .login-card [hidden] { display: none; }
+  .login-card a { color: var(--accent); font-size: 14px; }
   .login-card .primary { width: 100%; padding: 11px 16px; }
   .login-msg {
     font-family: var(--mono);
@@ -64,43 +68,92 @@
 
 <form class="login-card" id="login-form" autocomplete="on">
   <img src="/static/img/logo.png" alt="潮目 Shiome">
-  <label for="password">口令</label>
-  <input type="password" id="password" name="password" autocomplete="current-password" required>
-  <button type="submit" class="primary" id="submit">进入</button>
+  <h1 id="auth-title">登录</h1>
+  <p id="auth-help">正在加载...</p>
+  <div id="username-field" hidden>
+    <label for="username">用户名 · 3–32 位字母、数字、下划线、点或短横线</label>
+    <input id="username" name="username" autocomplete="username" minlength="3" maxlength="32" autocapitalize="none" spellcheck="false">
+  </div>
+  <label for="password" id="password-label">密码</label>
+  <input type="password" id="password" name="password" autocomplete="current-password" maxlength="128" required>
+  <div id="confirm-field" hidden>
+    <label for="confirm-password">再次输入密码</label>
+    <input type="password" id="confirm-password" autocomplete="new-password" maxlength="128">
+  </div>
+  <div id="key-field" hidden>
+    <label for="api-key">Anthropic API 密钥 · 只需保存一次</label>
+    <input type="password" id="api-key" autocomplete="off" maxlength="512" spellcheck="false">
+  </div>
+  <div id="invite-field" hidden>
+    <label for="invitation">邀请码</label>
+    <input type="password" id="invitation" autocomplete="off" maxlength="128" spellcheck="false">
+  </div>
+  <button type="submit" class="primary" id="submit" disabled>进入</button>
   <div class="login-msg" id="msg" role="alert"></div>
+  <a href="/login" id="login-link" hidden>已有账号，去登录</a>
   <div class="login-foot" id="foot">潮目 · <span id="ver">—</span></div>
 </form>
 
 <script>
-const form = document.getElementById("login-form");
-const msg = document.getElementById("msg");
-const submit = document.getElementById("submit");
+const el = id => document.getElementById(id);
+const mode = location.pathname === "/register" ? "register" : location.pathname === "/setup" ? "setup" : "login";
+let authStatus;
+const invitation = new URLSearchParams(location.hash.slice(1)).get("invite");
+if (invitation) {
+  el("invitation").value = invitation;
+  history.replaceState(null, "", location.pathname);
+}
+fetch("/api/version").then(r => r.json()).then(d => { el("ver").textContent = "v" + d.version; }).catch(() => {});
 
-fetch("/api/version").then((r) => r.json())
-  .then((d) => { document.getElementById("ver").textContent = "v" + d.version; })
-  .catch(() => {});
-
-form.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  msg.textContent = "";
-  submit.disabled = true;
+async function init() {
   try {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: document.getElementById("password").value }),
-    });
-    if (res.ok) {
-      window.location.href = "/";
-      return;
+    const response = await fetch("/api/auth/status");
+    if (!response.ok) throw new Error("无法获取登录状态，请刷新重试");
+    authStatus = await response.json();
+    if (mode === "setup") {
+      if (!authStatus.authenticated) { location.replace("/login"); return; }
+      if (!authStatus.setup_required) { location.replace("/"); return; }
     }
-    const body = await res.json().catch(() => ({}));
-    msg.textContent = body.detail || "登录失败";
-  } catch (err) {
-    msg.textContent = "连不上服务端：" + err.message;
+    const legacy = mode === "login" && authStatus.setup_required;
+    el("username-field").hidden = legacy;
+    el("username").required = !legacy;
+    el("confirm-field").hidden = mode === "login";
+    el("confirm-password").required = mode !== "login";
+    el("key-field").hidden = mode !== "setup" || authStatus.api_key_configured;
+    el("api-key").required = !el("key-field").hidden;
+    el("invite-field").hidden = mode !== "register";
+    el("invitation").required = mode === "register";
+    el("login-link").hidden = mode === "login";
+    if (mode !== "login") { el("password").minLength = 12; el("password").autocomplete = "new-password"; }
+    el("auth-title").textContent = mode === "setup" ? "创建管理员账号" : mode === "register" ? "接受邀请" : legacy ? "初始化 Shiome" : "登录 Shiome";
+    el("password-label").textContent = legacy ? "现有登录口令" : mode === "login" ? "密码" : "密码 · 至少 12 个字符";
+    el("auth-help").textContent = mode === "setup"
+      ? (authStatus.api_key_configured ? "已有模型密钥，无需重复填写。创建账号后，你现有的作品会保留在这个账号下。" : "保存共享模型密钥并创建你的账号。后续通过邀请码邀请其他人加入。")
+      : mode === "register" ? "输入邀请码并设置登录信息。你的作品、分析和备份与其他用户分开保存。"
+      : legacy ? "先用当前口令验证身份，再设置用户名和密码。" : "登录后继续整理你的作品与内容方向。";
+    el("submit").textContent = mode === "setup" ? "创建管理员账号" : mode === "register" ? "创建账号" : "进入";
+    el("submit").disabled = false;
+  } catch (err) { el("msg").textContent = err.message; }
+}
+el("login-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (mode !== "login" && el("password").value !== el("confirm-password").value) {
+    el("msg").textContent = "两次输入的密码不一致"; return;
   }
-  submit.disabled = false;
+  el("submit").disabled = true;
+  el("msg").textContent = "";
+  const payload = { username: el("username").value.trim(), password: el("password").value };
+  if (mode === "setup" && el("api-key").value) payload.api_key = el("api-key").value.trim();
+  if (mode === "register") payload.invitation = el("invitation").value.trim();
+  try {
+    const response = await fetch("/api/auth/" + mode, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "请检查用户名、密码和邀请信息");
+    el("password").value = el("confirm-password").value = el("api-key").value = "";
+    location.href = body.setup_required ? "/setup" : "/";
+  } catch (err) { el("msg").textContent = err.message; el("submit").disabled = false; }
 });
+init();
 </script>
 </body>
 </html>

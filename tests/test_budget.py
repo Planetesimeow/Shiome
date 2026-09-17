@@ -16,6 +16,7 @@ from app.usage import budget_blocked, month_key, month_spend, record_usage
 def test_known_models_are_priced():
     assert price_for("claude-haiku-4-5") == (1.00, 5.00)
     assert price_for("claude-opus-5") == (5.00, 25.00)
+    assert price_for("claude-sonnet-5") == (2.00, 10.00)
 
 
 def test_dated_model_ids_fall_back_to_the_base_model():

@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
@@ -24,11 +24,11 @@ from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager, closing, suppress
 
 from app import __version__
-from app import database
+from app import database, identity
+from app.identity_routes import router as identity_router
 from app.backups import daily_backups, snapshot
 from app.auth import (
-    AuthConfig, LoginThrottle, SESSION_COOKIE, is_loopback, make_session,
-    read_session, verify_password,
+    AuthConfig, LoginThrottle, SESSION_COOKIE, is_loopback, read_session,
 )
 from app.database import (
     init_db, get_conn, post_falls_in_anomaly, get_snapshots, backup_db,
@@ -36,7 +36,7 @@ from app.database import (
 )
 from app.models import (
     PostIn, AccountIn, AccountPatch, CreativeIn, CreativePatch,
-    AnomalyPeriodIn, SnapshotIn, VisionSaveIn, MergeIn, CreatorNoteIn, LoginIn,
+    AnomalyPeriodIn, SnapshotIn, VisionSaveIn, MergeIn, CreatorNoteIn,
 )
 from app.dedupe import find_duplicate_candidates, merge_posts, title_similarity, \
     TITLE_SIMILARITY_THRESHOLD
@@ -52,15 +52,27 @@ THROTTLE = LoginThrottle()
 
 # 不需要登录就能访问的路径。刻意列得很短：
 # 登录页本身、登录接口、问「我登录了吗」、以及版本号（排查问题时要能拿到）。
-PUBLIC_PATHS = {"/login", "/api/auth/login", "/api/auth/status", "/api/version",
+PUBLIC_PATHS = {"/login", "/setup", "/register", "/api/auth/register",
+                "/api/auth/login", "/api/auth/status", "/api/version",
                 "/favicon.ico", "/healthz"}
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     AUTH.validate()
+    identity.init_store()
+    for user in identity.list_users():
+        path = identity.data_path(user)
+        if not path.is_file():
+            raise RuntimeError('A registered user database is missing; restore it before starting')
     init_db()          # 建表 + 跑结构迁移（v1→v2 会自己先备份）
+    for user in identity.list_users():
+        path = identity.data_path(user)
+        if path != database.DB_PATH:
+            with database.database_scope(path, user['id']):
+                init_db()
     backup_db()        # 每天首启快照一份，防云同步弄坏唯一的手录数据
+    identity.backup_all()
     if not AUTH.configured:
         print("[shiome] 未配置鉴权：只接受来自本机的请求。"
               "要放到公网上，先设 SHIOME_PASSWORD_HASH（用 python -m scripts.set_password 生成）。")
@@ -78,49 +90,61 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="潮目 Shiome", version=__version__, lifespan=lifespan)
 STATIC_DIR = Path(__file__).parent / "static"
+app.include_router(identity_router)
 
 
 def _client_key(request: Request) -> str:
     return (request.client.host if request.client else "") or "unknown"
 
 
-def _authenticated_owner(request: Request) -> str | None:
-    """Bearer token（脚本/手机快捷指令）优先，其次是浏览器的签名 cookie。"""
+def _authenticated_principal(request: Request) -> dict | None:
+    """Resolve a server-owned identity before selecting any data file."""
+    if not AUTH.configured and not is_loopback(_client_key(request)):
+        return None
+    registered = identity.has_users()
     header = request.headers.get("authorization", "")
     if AUTH.api_token and header.lower().startswith("bearer "):
-        import hmac as _hmac
-        if _hmac.compare_digest(header[7:].strip(), AUTH.api_token):
-            return AUTH.owner_id
+        import hmac
+        if hmac.compare_digest(header[7:].strip(), AUTH.api_token):
+            user = identity.legacy_user() if registered else {'id': AUTH.owner_id, 'legacy': True}
+            return user if user and user.get('active', True) else None
     session = read_session(request.cookies.get(SESSION_COOKIE), AUTH.secret)
-    return session.get("sub") if session else None
+    if registered:
+        user = identity.get_user(session['sub']) if session else None
+        return user if (user and user['active'] and session.get('ver') == user['session_version']) else None
+    if session and session.get('sub') == AUTH.owner_id:
+        return {'id': AUTH.owner_id, 'legacy': True}
+    if not AUTH.configured and is_loopback(_client_key(request)):
+        return {'id': AUTH.owner_id, 'legacy': True}
+    return None
 
 
 @app.middleware("http")
 async def require_auth(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static/") or path in PUBLIC_PATHS:
+    if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'detail': '请求来源不匹配'}, status_code=403)
+    if path.startswith('/static/') or path in PUBLIC_PATHS:
         return await call_next(request)
-
-    if not AUTH.configured:
-        # 没配鉴权 = 只给本机用。不是「先跑起来再说」的宽松默认，
-        # 而是让「忘了配就上公网」这条路直接走不通。
-        if is_loopback(_client_key(request)):
-            request.state.owner_id = AUTH.owner_id
-            return await call_next(request)
-        return JSONResponse(
-            {"detail": "这个实例还没有配置鉴权，因此只接受本机访问。"
-                       "要远程使用，先设置 SHIOME_PASSWORD_HASH。"},
-            status_code=403,
-        )
-
-    owner = _authenticated_owner(request)
-    if owner is None:
-        if "text/html" in request.headers.get("accept", ""):
-            return RedirectResponse("/login", status_code=303)
-        return JSONResponse({"detail": "需要登录"}, status_code=401)
-
-    request.state.owner_id = owner
-    return await call_next(request)
+    user = _authenticated_principal(request)
+    if user is None:
+        if not AUTH.configured and not identity.has_users():
+            return JSONResponse({'detail': '这个实例尚未配置鉴权，只接受本机访问'}, status_code=403)
+        if 'text/html' in request.headers.get('accept', ''):
+            return RedirectResponse('/login', status_code=303)
+        return JSONResponse({'detail': '需要登录'}, status_code=401)
+    request.state.user = user
+    request.state.owner_id = user['id']
+    expected_user = request.headers.get('x-shiome-user')
+    if expected_user and expected_user != user['id']:
+        return JSONResponse({'detail': '登录账号已切换，请刷新页面后继续', 'account_changed': True}, status_code=409)
+    path = database.DB_PATH if user.get('legacy') else identity.data_path(user)
+    if not path.is_file():
+        return JSONResponse({'detail': '数据暂不可用，请联系管理员'}, status_code=503)
+    with database.database_scope(path, None if user.get('legacy') else user['id']):
+        return await call_next(request)
 
 
 @app.middleware("http")
@@ -131,49 +155,6 @@ async def private_responses(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     return response
-
-
-# ---------- 登录 ----------
-
-@app.get("/login", response_class=HTMLResponse)
-def login_page():
-    return FileResponse(STATIC_DIR / "login.html")
-
-
-@app.post("/api/auth/login")
-def login(payload: LoginIn, request: Request, response: Response):
-    """口令换一个签名 cookie。失败按来源 IP 限速，挡在线暴力猜口令。"""
-    if not AUTH.configured:
-        raise HTTPException(400, "这个实例没有配置口令，本机访问无需登录。")
-    key = _client_key(request)
-    if not THROTTLE.check(key):
-        raise HTTPException(429, "登录尝试过于频繁，请过一会儿再试。")
-    if not AUTH.password_hash or not verify_password(payload.password, AUTH.password_hash):
-        THROTTLE.record_failure(key)
-        raise HTTPException(401, "口令不对。")
-    THROTTLE.reset(key)
-    token = make_session(AUTH.owner_id, AUTH.secret, AUTH.session_days)
-    response.set_cookie(
-        SESSION_COOKIE, token, max_age=AUTH.session_days * 86400,
-        httponly=True, samesite="lax", secure=AUTH.production or request.url.scheme == "https",
-    )
-    return {"ok": True, "owner_id": AUTH.owner_id}
-
-
-@app.post("/api/auth/logout")
-def logout(response: Response):
-    response.delete_cookie(SESSION_COOKIE)
-    return {"ok": True}
-
-
-@app.get("/api/auth/status")
-def auth_status(request: Request):
-    """前端据此决定显不显示登录框。不泄露口令是否设置之外的任何信息。"""
-    return {
-        "configured": AUTH.configured,
-        "authenticated": _authenticated_owner(request) is not None
-        or (not AUTH.configured and is_loopback(_client_key(request))),
-    }
 
 
 @app.get("/api/version")
@@ -188,6 +169,8 @@ def health():
     try:
         with closing(sqlite3.connect(database.DB_PATH.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
             conn.execute("SELECT id FROM accounts LIMIT 1").fetchone()
+        with identity.connection() as conn:
+            conn.execute('SELECT id FROM users LIMIT 1').fetchone()
     except sqlite3.Error:
         return JSONResponse({"status": "unavailable"}, status_code=503)
     return {"status": "ok"}
@@ -200,7 +183,7 @@ def download_backup():
     name = "shiome-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + ".db"
     path = Path(temp.name) / name
     try:
-        snapshot(database.DB_PATH, path)
+        snapshot(database.current_db_path(), path)
     except Exception:
         temp.cleanup()
         raise
@@ -221,7 +204,8 @@ def _resolve_account(conn, account_id: int | None) -> dict:
 # ---------- 账号 ----------
 
 @app.get("/api/accounts")
-def list_accounts(owner_id: str = "local"):
+def list_accounts():
+    owner_id = "local"
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM accounts WHERE owner_id = ? ORDER BY id", (owner_id,)
@@ -230,7 +214,8 @@ def list_accounts(owner_id: str = "local"):
 
 
 @app.post("/api/accounts")
-def create_account(account: AccountIn, owner_id: str = "local"):
+def create_account(account: AccountIn):
+    owner_id = "local"
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO accounts (owner_id, platform, handle, display_name, persona, goal_note)
@@ -259,7 +244,8 @@ def update_account(account_id: int, patch: AccountPatch):
 # ---------- 创作物（内容画像住这里，一条内容发多平台只填一次）----------
 
 @app.get("/api/creatives")
-def list_creatives(owner_id: str = "local", limit: int = 100):
+def list_creatives(limit: int = 100):
+    owner_id = "local"
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM creatives WHERE owner_id = ? ORDER BY id DESC LIMIT ?",
@@ -269,7 +255,8 @@ def list_creatives(owner_id: str = "local", limit: int = 100):
 
 
 @app.post("/api/creatives")
-def create_creative(creative: CreativeIn, owner_id: str = "local"):
+def create_creative(creative: CreativeIn):
+    owner_id = "local"
     with get_conn() as conn:
         return {"id": _insert_creative(conn, creative.model_dump(), owner_id)}
 
@@ -512,7 +499,8 @@ def list_snapshots(post_id: int):
 # ---------- 创作者笔记（助手要懂你，光有数字不够）----------
 
 @app.post("/api/creator-notes")
-def add_creator_note(note: CreatorNoteIn, owner_id: str = "local"):
+def add_creator_note(note: CreatorNoteIn):
+    owner_id = "local"
     with get_conn() as conn:
         account_id = note.account_id or get_default_account_id(conn)
         cur = conn.execute(

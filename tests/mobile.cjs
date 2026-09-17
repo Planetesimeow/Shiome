@@ -83,6 +83,61 @@ async function checkDetailRecovery(page, context, firstPost) {
   console.log('PASS delayed detail, draft retry, duplicate save guard, snapshot refresh, shared analysis');
 }
 
+async function checkAccounts(browser, ownerContext, ownerPage, width) {
+  const base = 'http://127.0.0.1:8765';
+  await ownerPage.goto(base + '/settings');
+  await ownerPage.locator('#model-status').filter({ hasText: '密钥已配置' }).waitFor();
+  assert(await ownerPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'settings should fit');
+  assert.equal(await ownerPage.locator('#shared-api-key').inputValue(), '');
+  if (process.env.SHIOME_SCREENSHOT_DIR) await ownerPage.screenshot({ path: `${process.env.SHIOME_SCREENSHOT_DIR}/settings-${width}.png`, fullPage: true });
+  await ownerPage.locator('#invite-form button[type="submit"]').click();
+  await ownerPage.locator('#invite-result').waitFor();
+  const invite = await ownerPage.locator('#invite-link').inputValue();
+  assert(invite.includes('/register#invite='));
+  const memberContext = await browser.newContext({ viewport: { width, height: 844 }, isMobile: width < 760, hasTouch: width < 760 });
+  const memberPage = await memberContext.newPage();
+  const errors = [];
+  memberPage.on('pageerror', error => errors.push(error.message));
+  try {
+    await memberPage.goto(invite);
+    await memberPage.locator('#username').fill('member-' + width);
+    await memberPage.locator('#password').fill('member-test-password');
+    await memberPage.locator('#confirm-password').fill('member-test-password');
+    assert(!memberPage.url().includes('#'), 'invitation should be removed from the URL');
+    assert(await memberPage.locator('#key-field').isHidden(), 'members never provide an API key');
+    assert(await memberPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'registration should fit');
+    if (process.env.SHIOME_SCREENSHOT_DIR) await memberPage.screenshot({ path: `${process.env.SHIOME_SCREENSHOT_DIR}/register-${width}.png`, fullPage: true });
+    await memberPage.locator('#submit').click();
+    await memberPage.waitForURL(base + '/');
+    await memberPage.locator('#hs-count').filter({ hasText: '0' }).waitFor();
+    assert.deepEqual(await (await memberContext.request.get(base + '/api/posts')).json(), []);
+    assert.equal((await memberContext.request.get(base + '/api/admin/users')).status(), 403);
+    const ownPost = await memberContext.request.post(base + '/api/posts', { data: { title: 'private-member-' + width, publish_date: '2026-09-18' } });
+    assert.equal(ownPost.status(), 200);
+    assert(!(await (await ownerContext.request.get(base + '/api/posts')).text()).includes('private-member'));
+    await memberPage.goto(base + '/settings');
+    await memberPage.locator('#identity-label').filter({ hasText: 'member-' + width }).waitFor();
+    assert(await memberPage.locator('#admin-settings').isHidden());
+    await memberPage.locator('#current-password').fill('member-test-password');
+    await memberPage.locator('#new-password').fill('member-new-password');
+    await memberPage.locator('#new-password-confirm').fill('member-new-password');
+    await memberPage.locator('#credentials-form button[type="submit"]').click();
+    await memberPage.locator('#settings-message').filter({ hasText: '登录信息已更新' }).waitFor();
+    await memberPage.goto(base + '/');
+    await memberPage.locator('#hs-count').filter({ hasText: '1' }).waitFor();
+    // Simulate another tab signing into a different account while an old tab remains open.
+    await memberContext.request.post(base + '/api/auth/login', { data: { username: 'browser-owner', password: 'browser-test-password' } });
+    const rejected = memberPage.waitForResponse(r => r.url().endsWith('/api/posts') && r.status() === 409);
+    await memberPage.evaluate(() => { api('/api/posts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'must-never-cross-accounts', publish_date: '2026-09-18' }) }).catch(() => {}); });
+    await rejected;
+    assert(!(await (await ownerContext.request.get(base + '/api/posts')).text()).includes('must-never-cross-accounts'));
+    assert.deepEqual(errors, []);
+  } finally { await memberContext.close(); }
+  await ownerPage.goto(base + '/');
+  await ownerPage.locator('#hs-count').filter({ hasText: /\d/ }).waitFor();
+  console.log(`PASS ${width}px admin invitation, member signup, private workspace, password change, account switch`);
+}
+
 async function main() {
   const engine = process.env.SHIOME_BROWSER === 'webkit' ? webkit : chromium;
   const browser = await engine.launch({ headless: true, ...(process.env.SHIOME_BROWSER_CHANNEL ? { channel: process.env.SHIOME_BROWSER_CHANNEL } : {}) });
@@ -94,8 +149,17 @@ async function main() {
       page.on('pageerror', e => errors.push(e.message));
       await page.goto('http://127.0.0.1:8765/');
       await page.waitForURL('**/login');
+      if (width !== 360) await page.locator('#username').fill('browser-owner');
       await page.locator('#password').fill('browser-test-password');
       await page.locator('#submit').click();
+      if (width === 360) {
+        await page.waitForURL('**/setup');
+        await page.locator('#username').fill('browser-owner');
+        await page.locator('#password').fill('browser-test-password');
+        await page.locator('#confirm-password').fill('browser-test-password');
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'setup should fit a phone');
+        await page.locator('#submit').click();
+      }
       await page.waitForURL('http://127.0.0.1:8765/');
       await page.locator('#hs-count').filter({ hasText: /\d/ }).waitFor();
       const fits = async () => assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `horizontal overflow at ${width}`);
@@ -125,7 +189,7 @@ async function main() {
       await page.locator('[data-save-draft]').click();
       await page.locator('#reauth-notice').waitFor();
       assert(await title.isVisible());
-      const login = await context.request.post('http://127.0.0.1:8765/api/auth/login', { data: { password: 'browser-test-password' } });
+      const login = await context.request.post('http://127.0.0.1:8765/api/auth/login', { data: { username: 'browser-owner', password: 'browser-test-password' } });
       assert.equal(login.status(), 200);
       await duration.fill('21');
       const save = page.waitForResponse(r => r.url().endsWith('/api/vision/save') && r.status() === 200);
@@ -147,6 +211,7 @@ async function main() {
       assert.equal(backup.status(), 200);
       assert((await backup.body()).subarray(0, 15).equals(Buffer.from('SQLite format 3')));
       if (process.env.SHIOME_SCREENSHOT_DIR) await page.screenshot({ path: `${process.env.SHIOME_SCREENSHOT_DIR}/shiome-${width}.png`, fullPage: true });
+      await checkAccounts(browser, context, page, width);
       await page.locator('#tools-menu summary').click();
       await page.locator('#logout-btn').click();
       await page.waitForURL('**/login');

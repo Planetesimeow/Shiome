@@ -13,10 +13,6 @@ Platform = Literal["douyin", "xiaohongshu", "bilibili"]
 MediaType = Literal["video", "image_text"]
 
 
-class LoginIn(BaseModel):
-    password: str
-
-
 # ---------- 账号 ----------
 
 class AccountIn(BaseModel):

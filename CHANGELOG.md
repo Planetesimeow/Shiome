@@ -14,6 +14,21 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.12] — 2026-09-18
+
+**Added**
+- Protected first-owner setup, username/password login, single-use expiring invitations,
+  password changes and administrator user suspension. Existing personal data belongs to
+  the first administrator; each invited user gets a separate database and private export.
+- A shared encrypted Anthropic key managed by the administrator, personal usage records
+  and a service-wide budget ledger. Paid calls are serialized on the single-worker service.
+
+**Changed**
+- Analysis and screenshot recognition default to `claude-sonnet-5`, with thinking disabled
+  for forced structured tool output and current $2/$10 per million token pricing.
+- Backups cover the identity store and all user databases; ordinary downloads contain
+  only the current user's content. Password changes and suspension invalidate sessions.
+
 ### [0.3.0-dev.11] — 2026-09-18
 
 **Changed**
@@ -240,6 +255,20 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0-dev.12] — 2026-09-18
+
+**新增**
+- 受初始化口令保护的管理员设置、用户名密码登录、一次性限时邀请、修改密码和停用用户。
+  原有个人数据归首次创建的管理员所有，受邀用户分别使用独立数据库及个人备份。
+- 管理员配置一次共享 Anthropic 密钥，加密保存；按人记录用量，全站统一检查预算。
+  当前单 worker 服务同一时间处理一个付费请求。
+
+**调整**
+- 分析与截图识别默认使用 `claude-sonnet-5`，为结构化工具输出关闭默认思考，
+  按当前每百万 token 输入 2 美元、输出 10 美元记账。
+- 后台备份覆盖身份库和各用户数据库；网页下载仅包含当前用户的数据。
+  修改密码和停用账号会让既有会话失效。
 
 ### [0.3.0-dev.11] — 2026-09-18
 

@@ -18,26 +18,33 @@ import json
 import time
 from anthropic import Anthropic, APIError, APIConnectionError, APIStatusError, RateLimitError
 from app.database import get_conn
+from app.model_calls import single_model_call
 
 _client = None
+_client_key = None
 
 
 def get_client() -> Anthropic:
-    global _client
-    if _client is None:
-        _client = Anthropic(api_key=get_api_key())
+    global _client, _client_key
+    key = get_api_key()
+    if not key:
+        raise ValueError('管理员尚未配置模型密钥')
+    if _client is None or _client_key != key:
+        _client = Anthropic(api_key=key)
+        _client_key = key
     return _client
 
 
 def get_api_key() -> str | None:
     """
-    单独一个函数而不是内联 os.environ —— 将来支持多用户时，
-    每个用户自带 key 只要改这里，不用动任何调用点。
+    服务端共享密钥：优先使用管理员保存的加密配置，否则沿用环境变量。
+    普通用户无法读取或修改密钥；所有调用都由服务管理员统一付费。
     """
-    return os.environ.get("ANTHROPIC_API_KEY")
+    from app.identity import shared_api_key
+    return shared_api_key()
 
 
-MODEL = os.environ.get("ANALYSIS_MODEL", "claude-haiku-4-5-20251001")
+MODEL = os.environ.get("ANALYSIS_MODEL", "claude-sonnet-5")
 
 SENSITIVE_TOPIC_NOTE = (
     "在给内容建议时，凡是涉及资产规模、移民/身份、大额消费金额的具体表述，"
@@ -156,6 +163,7 @@ def _extract_json(text: str) -> str:
     return t
 
 
+@single_model_call
 def call_claude_json(system: str, user_content: str, schema: dict | None = None,
                      images: list[tuple[str, str]] | None = None,
                      model: str | None = None, kind: str = "analysis") -> dict:
@@ -184,6 +192,10 @@ def call_claude_json(system: str, user_content: str, schema: dict | None = None,
         system=system,
         messages=[{"role": "user", "content": content}],
     )
+    if use_model.startswith("claude-sonnet-5"):
+        # Sonnet 5 enables thinking by default; forced tool output requires it off.
+        kwargs["thinking"] = {"type": "disabled"}
+        kwargs["max_tokens"] = 4096
     if schema is not None:
         kwargs["tools"] = [{
             "name": "emit_result",
@@ -195,13 +207,13 @@ def call_claude_json(system: str, user_content: str, schema: dict | None = None,
     t0 = time.time()
     try:
         resp = get_client().messages.create(**kwargs)
-    except (APIConnectionError, RateLimitError) as e:
-        return {"_api_error": f"网络/限流问题（可重试）：{e}", "retryable": True}
+    except (APIConnectionError, RateLimitError):
+        return {"_api_error": "模型连接失败或暂时限流，请稍后重试。", "retryable": True}
     except APIStatusError as e:
         retryable = e.status_code >= 500
-        return {"_api_error": f"API 返回 {e.status_code}：{e.message}", "retryable": retryable}
-    except APIError as e:
-        return {"_api_error": str(e), "retryable": False}
+        return {"_api_error": f"模型服务返回 {e.status_code}，请联系管理员检查模型配置。", "retryable": retryable}
+    except (APIError, ValueError):
+        return {"_api_error": "模型暂不可用，请联系管理员检查密钥配置。", "retryable": False}
 
     meta = {
         "model": use_model,

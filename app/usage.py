@@ -34,18 +34,25 @@ def record_usage(conn, provider: str, model: str | None, kind: str,
                  input_tokens: int | None, output_tokens: int | None,
                  duration_ms: int | None = None):
     """记一次模型调用。认不出价格的（比如 Gemini）成本存 NULL，不猜。"""
+    values = (datetime.now(timezone.utc).isoformat(), month_key(), provider, model, kind,
+              input_tokens, output_tokens, cost_usd(model, input_tokens, output_tokens), duration_ms)
     conn.execute(
         """INSERT INTO api_usage
            (created_at, month, provider, model, kind, input_tokens, output_tokens,
             cost_usd, duration_ms)
            VALUES (?,?,?,?,?,?,?,?,?)""",
-        (datetime.now(timezone.utc).isoformat(), month_key(), provider, model, kind,
-         input_tokens, output_tokens, cost_usd(model, input_tokens, output_tokens),
-         duration_ms),
+        values,
     )
+    from app.database import current_user_id
+    if current_user_id():
+        from app.identity import connection
+        with connection() as shared:
+            shared.execute('INSERT INTO api_usage(user_id,created_at,month,provider,model,kind,'
+                           'input_tokens,output_tokens,cost_usd,duration_ms) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                           (current_user_id(), *values))
 
 
-def month_spend(conn, month: str | None = None) -> dict:
+def _month_spend(conn, month: str | None = None, shared_limit: bool = True) -> dict:
     """本月花了多少。cost_usd 为 NULL 的调用单独计数，不假装它们是 0 元。"""
     month = month or month_key()
     row = conn.execute(
@@ -65,7 +72,7 @@ def month_spend(conn, month: str | None = None) -> dict:
         (month,),
     ).fetchall()]
 
-    limit = budget_limit()
+    limit = budget_limit() if shared_limit else None
     spent = round(row["spent"], 4)
     return {
         "month": month,
@@ -81,14 +88,32 @@ def month_spend(conn, month: str | None = None) -> dict:
     }
 
 
+def month_spend(conn, month: str | None = None) -> dict:
+    from app.database import current_user_id
+    status = _month_spend(conn, month, shared_limit=current_user_id() is None)
+    status['shared_billing'] = current_user_id() is not None
+    return status
+
+
+def service_spend() -> dict:
+    from app.identity import connection
+    with connection() as conn:
+        return _month_spend(conn)
+
+
 def budget_blocked(conn) -> dict | None:
     """
     超了预算就返回一个跟 API 错误同形状的信封（前端已经会渲染它），没超返回 None。
     刻意在**发起调用之前**检查：事后才发现超支，钱已经花掉了。
     """
-    status = month_spend(conn)
+    from app.database import current_user_id
+    shared = current_user_id() is not None
+    status = service_spend() if shared else month_spend(conn)
     if not status["over_budget"]:
         return None
+    if shared:
+        return {'_api_error': '服务本月的 AI 预算已用完，请联系管理员。',
+                'retryable': False, '_budget': {'over_budget': True}}
     return {
         "_api_error": (
             f"本月 API 预算已用完：已花 ${status['spent_usd']:.2f}，"

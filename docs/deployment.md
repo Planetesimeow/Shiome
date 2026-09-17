@@ -1,6 +1,6 @@
 # 上线与手机使用 / Deployment and mobile access
 
-本阶段提供手机浏览器可用的单用户网页版。2026-09-17，创作者的 VPS 实例已完成公网 HTTPS、
+本阶段提供手机浏览器可用的网页版。新增邀请制账号和按用户隔离，升级步骤见[账号与隔离说明](multi-user.md)。2026-09-17，创作者的个人 VPS 实例已完成公网 HTTPS、
 登录保护、整机重启恢复和离机备份恢复验证；创作者已在 iPhone 确认上传与真实识别正常。
 新建实例仍须按本文配置和验收。持续自动异地备份尚未配置，真实使用的质量、速度和费用继续观察。
 
@@ -8,9 +8,9 @@
 
 - 一台可运行 Docker 的 Linux 服务器及 SSH 访问；或能运行 Docker、挂载持久磁盘的 Python 托管平台。
 - 域名指向服务器，开放 TCP 80/443；使用托管平台自带 HTTPS 域名时不需要自行运行 Caddy。
-- 登录口令、模型 API key、月度预算和异地备份目的地。密钥直接填服务器环境，不提交 Git。
+- 初始化口令、模型 API key、月度预算和异地备份目的地。模型密钥填服务器环境或管理员设置页，不提交 Git。
 
-当前是单用户、单实例、一个 Uvicorn worker。SQLite 必须放在持久磁盘；不能放进临时容器层、
+当前是单实例、一个 Uvicorn worker，每位用户独立 SQLite 文件，另有私有身份库。所有数据库必须放在持久磁盘；不能放进临时容器层、
 短生命周期函数或多个实例各自独立的磁盘。备份与模型调用可能涉及私人数据，截图原件不会打入镜像。
 
 ## Linux 服务器：Docker Compose + Caddy
@@ -36,8 +36,8 @@ Caddy 会为这个实际名称申请独立的公网证书；不要使用 `tls in
 5. 部署可追溯的 Git 提交，生成独立的应用登录口令和会话密钥。记录提交、访问地址及备份位置，
    凭据保存在权限受限的本地文件和服务器环境文件中，不能进入操作日志或 PR。
 
-**尚未配置 API key 也可以上线。** 登录、已有数据的编辑与查看、手动快照和数据库备份可用；
-截图识别和 AI 分析必须等模型密钥配置后再验收。不要把没有调用模型的测试写成 AI 已可用。
+**首次管理员设置需要共享 API key。** 已有环境配置可以沿用，无需再次填写；否则在初始化页面输入一次。
+模型密钥仅管理员配置，受邀用户只创建用户名和密码。密钥可用性通过免费的模型查询验证；截图识别与 AI 分析的真实质量仍需实际调用验收。不要把没有调用模型的测试写成 AI 已可用。
 也不要将截图目录、开发用数据库或演示数据默认复制进生产实例。
 
 上线后用真实 HTTPS 地址检查登录保护、登录后的接口与备份下载。重启应用后核对数据库仍在，
@@ -126,7 +126,8 @@ docker compose up -d --build --wait
 curl --fail https://shiome.example.com/healthz
 ```
 
-更新前记录 `git rev-parse HEAD`，备份文件名每次使用新时间。升级失败时检出上一个已验证版本，重新构建。
+多用户实例还必须备份私有身份库和每位用户的数据文件；上例只备份当前默认个人库，完整目录与恢复要求见[账号与隔离说明](multi-user.md)。
+更新前记录 `git rev-parse HEAD`，备份文件名每次使用新时间。源码检出文件应可供容器用户读取（普通文件通常 644），环境凭据文件保持 600。升级失败时检出上一个已验证版本，重新构建。
 若升级涉及不可逆数据库结构迁移，先用下面的恢复流程把升级前备份恢复到新路径，再启动旧版本。
 **不要使用 `docker compose down -v`：它会删除数据卷和证书卷。**
 
@@ -147,18 +148,19 @@ curl --fail https://shiome.example.com/healthz
 采用 SQLite backup API 和完整性检查，写完后原子发布，失败会在服务日志中记录并于下一轮重试。
 
 **同一块服务器磁盘上的备份不是异地备份。** 最小可用方式：手机或电脑的「工具 → 下载数据备份」
-导出当时的完整数据库，并存入自己的云盘或另一台设备；在重要录入后执行。导出包含全部作品、快照、
+导出当前登录用户的完整内容数据库，并存入自己的云盘或另一台设备；在重要录入后执行。导出包含这个用户的全部作品、快照、
 画像与分析记录，不包含环境变量里的 API key 和登录密钥。
 需要无人值守备份时，在确定自己的对象存储/第二台服务器后接入外部定时任务，将每天的完整快照加密上传；
 在目的地尚未配置前，不能宣称自动异地备份已经生效。
 
-恢复时先停止应用，将下载的备份挂载进容器，运行 `python -m scripts.restore <备份> <新路径>`，
-再修改 `SHIOME_DB_PATH`、启动并核对作品/快照数量。脚本会校验完整性和 Shiome 表结构，拒绝覆盖已有文件。
-至少实际恢复一次，确认备份可用。
+恢复个人数据时先运行 `python -m scripts.restore <备份> <新路径>`，在新文件验证完整性与记录数量。
+脚本校验 Shiome 表结构并拒绝覆盖已有文件。验证后停止应用，另存该用户的旧文件，将恢复文件放回
+该用户原有的数据路径，检查归属和权限后启动。多人实例不能仅修改 `SHIOME_DB_PATH` 来切换到个人备份；
+身份库与各用户目录必须保持对应关系。整站恢复按[账号与隔离说明](multi-user.md)执行。
 
 ## 手机验收
 
-1. 用 Safari / Chrome 打开实际 HTTPS 地址，用口令登录。
+1. 用 Safari / Chrome 打开实际 HTTPS 地址，完成首次管理员设置，再用用户名和密码登录。
 2. 「截图」中选择一张真实创作者中心截图。提取会调用模型并计费，确认前不入库。
 3. 核对标题、发布时间、作品时长及指标，详情页同时核对观察时间，然后确认入库。
 4. 从「作品」查看结果，关闭再打开页面，确认数据仍在。
@@ -167,17 +169,20 @@ curl --fail https://shiome.example.com/healthz
    入口需要联网，不提供离线分析或后台上传。系统后台可能暂停识别请求，等待完成再切走更稳妥。
 
 自动化浏览器检查覆盖 360 / 390 / 430 / 1280 像素、Chromium / WebKit：登录、切换视图、保留草稿、
-会话过期后的重新登录、编辑保存、作品详情、下载备份及退出。测试识别使用固定数据，不调用付费模型。
+会话过期后的重新登录、编辑保存、作品详情、下载备份及退出；也覆盖管理员设置、邀请注册、修改密码和账号切换。
+测试识别使用固定数据，不调用付费模型。
 自动化不能替代真实手机相册权限、真实域名证书及实际模型 key 的验收。
 
 ## English quick reference
 
-This is a single-user, single-instance FastAPI app with SQLite. Build the root Dockerfile,
+This is an invite-only, single-instance FastAPI app with separate SQLite databases per user and a private identity store. Build the root Dockerfile,
 persist `/data`, configure production password/secret/API keys, and expose HTTPS. Compose
 includes Caddy; managed hosting should supply its own HTTPS ingress. `PORT` is supported,
 readiness is `/healthz`, and production refuses incomplete authentication configuration.
 
 Daily snapshots are local only. Authenticated `/api/backup` downloads a fresh, verified
-database for offsite storage. `python -m scripts.restore SOURCE NEW_PATH` restores without
-overwriting existing databases. Configure an external destination before claiming automatic
-offsite backups. Never remove production volumes when updating the application.
+personal database for offsite storage. `python -m scripts.restore SOURCE NEW_PATH` validates a restore
+without overwriting existing databases. Stop the app before replacing that user's original data file;
+preserve its path and permissions. Whole-service recovery also needs the identity database,
+all user files and the unchanged session/encryption secret. Configure an external destination
+before claiming automatic offsite backups. Never remove production volumes when updating the application.
