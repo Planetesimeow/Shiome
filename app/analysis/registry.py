@@ -79,10 +79,6 @@ ANALYSES = {
 }
 
 
-def get_analysis(name: str) -> dict | None:
-    return ANALYSES.get(name)
-
-
 def list_analyses() -> list[dict]:
     """给前端和（将来）助手看的清单，不含函数引用。"""
     return [{"name": k, "label": v["label"], "scope": v["scope"],
