@@ -14,6 +14,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.8] — 2026-09-18
+
+**Changed**
+- Integrate the remaining deployment guidance and stacked-branch workflow into the Phase 1 release sequence, preserving the original commits.
+
 ### [0.3.0-dev.5] — 2026-09-17
 
 **Added**
@@ -201,6 +206,11 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0-dev.8] — 2026-09-18
+
+**调整**
+- 将尚未进入 Phase 1 release 的部署说明和串联分支规范纳入集成序列，保留原始提交历史。
 
 ### [0.3.0-dev.5] — 2026-09-17
 
