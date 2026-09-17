@@ -1,13 +1,4 @@
-"""
-"关于这个创作者，我们知道什么" —— 集中在一个地方组装。
-
-v1 时每个分析端点自己在 main.py 里 SELECT 一遍自己要的数据，五份互不相同的取数逻辑。
-这里把它收成一处，眼下的好处是基线口径不会各算各的；更重要的是，Phase 5 的对话式助手
-需要的正是同一份东西 —— 助手要"懂你"，靠的就是这份上下文。所以这不是给未来留的空壳，
-是今天就在用、将来直接复用的那一层（roadmap 里说的 socket）。
-
-刻意的边界：这里只负责**取数和组织**，不负责判断，也不调模型。
-"""
+"""分析与笔记 API 共用的取数函数；按账号组织作品与创作物，不调用模型。"""
 import json
 
 # 喂给模型时每条作品带哪些字段。不是全表 —— 无关字段会稀释注意力，也白烧 token。
@@ -91,17 +82,6 @@ def profiled_creatives(conn, account_id: int, limit: int = 20) -> list[dict]:
     return out
 
 
-def recent_account_metrics(conn, account_id: int, limit: int = 6) -> list[dict]:
-    rows = conn.execute(
-        """SELECT captured_at, period, plays, profile_visits, net_followers,
-                  unfollows, completion_rate, search_views, cover_ctr
-           FROM account_metrics WHERE account_id = ?
-           ORDER BY captured_at DESC LIMIT ?""",
-        (account_id, limit),
-    ).fetchall()
-    return [{k: v for k, v in dict(r).items() if v is not None} for r in rows]
-
-
 def creator_notes(conn, account_id: int | None = None, post_id: int | None = None,
                   limit: int = 20) -> list[dict]:
     """创作者自己写下的想法。数字说不出"我想往哪个方向转"，这个能。"""
@@ -116,27 +96,3 @@ def creator_notes(conn, account_id: int | None = None, post_id: int | None = Non
     sql += " ORDER BY created_at DESC LIMIT ?"
     params.append(limit)
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
-
-
-def build_creator_context(conn, account_id: int, *, recent_limit: int = 20,
-                          post_id: int | None = None,
-                          include_notes: bool = True) -> dict:
-    """
-    一份完整的"这个创作者现在是什么状态"。分析模块按需取其中几块；
-    Phase 5 的助手整份用，并按对话内容决定展开哪一部分。
-    """
-    from app.analysis.prompts import compute_baseline, get_account
-    from app.database import get_snapshots
-
-    ctx: dict = {
-        "account": get_account(conn, account_id),
-        "baseline": compute_baseline(conn, account_id),
-        "recent_posts": recent_posts(conn, account_id, recent_limit),
-        "account_metrics": recent_account_metrics(conn, account_id),
-    }
-    if include_notes:
-        ctx["creator_notes"] = creator_notes(conn, account_id, post_id=post_id)
-    if post_id is not None:
-        ctx["post"] = get_post_with_creative(conn, post_id)
-        ctx["snapshots"] = get_snapshots(conn, post_id)
-    return ctx

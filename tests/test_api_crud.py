@@ -1,4 +1,5 @@
 """账号 / 作品 / 创作物 / 快照 / 异常期 的基本读写。"""
+import pytest
 
 
 def test_default_account_exists_with_empty_persona(client):
@@ -71,6 +72,19 @@ def test_baseline_excludes_anomaly_posts(client, seeded):
     total = len(client.get("/api/posts").json())
     assert baseline["n"] < total, "基线应排除异常期作品"
     assert baseline["avg_completion_rate"] is not None
+
+
+def test_growth_baseline_uses_only_own_normal_posts(client, seeded):
+    posts = [p for p in client.get("/api/posts").json() if not p["is_anomaly_period"]]
+    rates = [p["new_followers"] / p["plays"] for p in posts if p["plays"]]
+    other = client.post("/api/accounts", json={"platform": "douyin", "handle": "other"}).json()["id"]
+    client.post("/api/posts", json={"account_id": other, "title": "unrelated",
+                                  "publish_date": "2026-09-11", "plays": 9999999,
+                                  "new_followers": 999999})
+    baseline = client.get("/api/baseline").json()
+    assert baseline["avg_plays"] == pytest.approx(sum(p["plays"] for p in posts) / len(posts))
+    assert baseline["avg_new_followers"] == pytest.approx(sum(p["new_followers"] for p in posts) / len(posts))
+    assert baseline["avg_play_to_follow_rate"] == pytest.approx(sum(rates) / len(rates))
 
 
 def test_delete_post_cascades(client, seeded):

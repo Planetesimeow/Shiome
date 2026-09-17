@@ -5,7 +5,10 @@ v2 的 API 是破坏性重命名过的：/api/videos* → /api/posts*，另外�
 / creator-notes / duplicate-candidates。没有保留旧路径的兼容别名 —— 唯一的调用方就是
 我们自己的前端，留着两套名字只会让新来的人不知道该用哪个。
 """
+import asyncio
 import json
+import sqlite3
+import tempfile
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
@@ -15,10 +18,14 @@ load_dotenv()
 from fastapi import FastAPI, UploadFile, File, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing, suppress
 
 from app import __version__
+from app import database
+from app.backups import daily_backups, snapshot
 from app.auth import (
     AuthConfig, LoginThrottle, SESSION_COOKIE, is_loopback, make_session,
     read_session, verify_password,
@@ -47,11 +54,12 @@ THROTTLE = LoginThrottle()
 # 不需要登录就能访问的路径。刻意列得很短：
 # 登录页本身、登录接口、问「我登录了吗」、以及版本号（排查问题时要能拿到）。
 PUBLIC_PATHS = {"/login", "/api/auth/login", "/api/auth/status", "/api/version",
-                "/favicon.ico"}
+                "/favicon.ico", "/healthz"}
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    AUTH.validate()
     init_db()          # 建表 + 跑结构迁移（v1→v2 会自己先备份）
     backup_db()        # 每天首启快照一份，防云同步弄坏唯一的手录数据
     if not AUTH.configured:
@@ -60,7 +68,13 @@ async def lifespan(_app: FastAPI):
     elif AUTH.secret_derived:
         print("[shiome] 提示：没设 SHIOME_SECRET_KEY，会话密钥从口令哈希派生。"
               "改口令会让所有人重新登录一次。")
-    yield
+    backup_task = asyncio.create_task(daily_backups())
+    try:
+        yield
+    finally:
+        backup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await backup_task
 
 
 app = FastAPI(title="潮目 Shiome", version=__version__, lifespan=lifespan)
@@ -110,6 +124,16 @@ async def require_auth(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def private_responses(request: Request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
+
+
 # ---------- 登录 ----------
 
 @app.get("/login", response_class=HTMLResponse)
@@ -132,7 +156,7 @@ def login(payload: LoginIn, request: Request, response: Response):
     token = make_session(AUTH.owner_id, AUTH.secret, AUTH.session_days)
     response.set_cookie(
         SESSION_COOKIE, token, max_age=AUTH.session_days * 86400,
-        httponly=True, samesite="lax", secure=request.url.scheme == "https",
+        httponly=True, samesite="lax", secure=AUTH.production or request.url.scheme == "https",
     )
     return {"ok": True, "owner_id": AUTH.owner_id}
 
@@ -157,6 +181,32 @@ def auth_status(request: Request):
 def get_version_public():
     """公开：排查问题时不用先登录才能知道对面跑的是哪一版。"""
     return {"version": __version__}
+
+
+@app.get("/healthz")
+def health():
+    """Readiness without returning account data or creating a missing database."""
+    try:
+        with closing(sqlite3.connect(database.DB_PATH.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+            conn.execute("SELECT id FROM accounts LIMIT 1").fetchone()
+    except sqlite3.Error:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "ok"}
+
+
+@app.get("/api/backup")
+def download_backup():
+    """Authenticated, fresh database export for storage away from the server."""
+    temp = tempfile.TemporaryDirectory(prefix="shiome-export-")
+    name = "shiome-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + ".db"
+    path = Path(temp.name) / name
+    try:
+        snapshot(database.DB_PATH, path)
+    except Exception:
+        temp.cleanup()
+        raise
+    return FileResponse(path, media_type="application/octet-stream", filename=name,
+                        background=BackgroundTask(temp.cleanup))
 
 
 def _resolve_account(conn, account_id: int | None) -> dict:
@@ -636,9 +686,11 @@ async def vision_extract(file: UploadFile = File(...)):
     with get_conn() as conn:
         if (blocked := budget_blocked(conn)) is not None:
             return blocked
-    content = await file.read()
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "截图超过 10 MB，请缩小后再上传。")
     try:
-        return extract_screenshot(content, file.content_type)
+        return await run_in_threadpool(extract_screenshot, content, file.content_type)
     except Exception as e:  # 图片本身打不开等本地问题
         raise HTTPException(400, f"图片无法处理：{e}")
 

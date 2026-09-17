@@ -53,3 +53,44 @@ jobs:
               assert c.get("/api/accounts", headers=auth).status_code == 200
           print("boots clean, and closed to anonymous callers")
           PY
+
+  mobile:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chromium, webkit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: pip install -r requirements.txt
+      - run: npm ci
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Start disposable server and check phone flows
+        env:
+          SHIOME_BROWSER: ${{ matrix.browser }}
+        run: |
+          python -m tests.browser_server > /tmp/shiome-browser.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"; cat /tmp/shiome-browser.log' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8765/healthz; then break; fi
+            sleep 1
+          done
+          npm run test:mobile
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify the actual Compose deployment
+        run: python -m tests.docker_smoke

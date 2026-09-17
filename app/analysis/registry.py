@@ -1,12 +1,4 @@
-"""
-分析模块登记表。
-
-一处声明「有哪些分析、各自需要什么、怎么跑」，路由和（Phase 5 的）对话式助手都读它。
-
-为什么要有这层：v1 把五个分析各写死成一个路由，助手要调用它们时得把每个都再包一遍。
-登记表让助手可以直接把这些分析当工具列出来、按名字调用 —— 这就是 roadmap 里说的
-「给助手留的 socket」，而且它今天就在被路由使用，不是空壳。
-"""
+"""分析登记表：集中声明名称、作用范围、说明及执行函数，由 API 路由读取。"""
 from app.analysis.enhancement import analyze_enhancement
 from app.analysis.trend_forecast import analyze_trend_forecast
 from app.analysis.pool_diagnosis import analyze_diffusion
@@ -69,7 +61,7 @@ ANALYSES = {
     "pool_diagnosis": {
         "label": "扩散诊断",
         "scope": POST_SCOPE,
-        "description": "读时序快照的曲线形状：健康爬升 / 冻结 / 断崖 / 自然衰减，以及卡在哪个信号。",
+        "description": "描述快照中的增长、横盘和增速变化，区分观察事实与原因假设。",
         "run": _run_pool_diagnosis,
     },
     "content_ideas": {
