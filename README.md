@@ -4,7 +4,7 @@
 
 帮助创作者找到稳定的内容方向，提升观看和涨粉。将创作者中心截图转成可核对的数据，结合内容描述和历史表现，按需生成分析。
 
-当前为**单用户试运行版本**，主要支持抖音。手机浏览器的登录、截图录入、作品查看与备份已实现；实际公网实例还需配置服务器、域名和凭据。版本见 [`app/__init__.py`](app/__init__.py)。
+当前为**单用户网页版试运行版本**，主要支持抖音。个人实例已于 2026-09-17 部署到 VPS，iPhone 上传与真实截图识别已验证；新建自己的实例请按[部署指南](docs/deployment.md)配置服务器、HTTPS 与凭据。版本见 [`app/__init__.py`](app/__init__.py)。
 
 ## 已有功能
 
@@ -81,7 +81,7 @@ CI 覆盖 Python 3.11 / 3.12、Chromium / WebKit 的手机流程，以及实际 
 
 Shiome helps creators find repeatable content directions and improve viewing and follower growth. It turns creator-center screenshots into editable drafts, keeps post metrics separate from creative descriptions, and runs five analyses on demand.
 
-This is a single-user pilot, currently focused on Douyin. Mobile navigation, login, screenshot confirmation, metrics, snapshots, reports, API cost tracking and backup tools are implemented. A live instance still requires a server, domain and credentials; see [deployment](docs/deployment.md).
+This is a single-user web pilot, currently focused on Douyin. The creator's VPS instance has been deployed, with real iPhone upload and screenshot recognition verified on September 17, 2026. Mobile navigation, login, screenshot confirmation, metrics, snapshots, reports, API cost tracking and backup tools are implemented. New installations require their own server, HTTPS and credentials; see [deployment](docs/deployment.md).
 
 Use Python 3.11 or 3.12 and the commands above. Browsing and manual editing do not require a model key. Phone access requires configured authentication and HTTPS. Data defaults to `app/data/shiome.db`; personal screenshots, databases and secrets are excluded from Git and Docker images.
 

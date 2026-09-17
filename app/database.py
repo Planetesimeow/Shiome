@@ -166,34 +166,6 @@ CREATE TABLE IF NOT EXISTS account_metrics (
     source TEXT DEFAULT 'vision'
 );
 
--- ---- 对话式助手的插槽（Phase 5 才建功能，表结构现在就留好）----
--- 现在建表、以后再建功能，是因为加表最贵的时机是"已经部署、已经有线上数据之后"。
--- 助手要能记住上下文，所以对话必须落库，而不是只活在前端内存里。
-
-CREATE TABLE IF NOT EXISTS conversations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id TEXT NOT NULL DEFAULT 'local',
-    account_id INTEGER REFERENCES accounts(id),  -- 可空：跨账号的对话
-    title TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL REFERENCES conversations(id),
-    role TEXT NOT NULL,                  -- user / assistant / tool
-    content TEXT NOT NULL,
-    tool_calls TEXT,                     -- JSON：助手调用了哪些分析/查询
-    model_used TEXT,
-    input_tokens INTEGER,
-    output_tokens INTEGER,
-    duration_ms INTEGER,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
-
 -- 创作者自己写下的想法。助手要"懂你"，光有数字不够 —— 还得知道你怎么想：
 -- 想转的方向、对某条片子的判断、这周觉得推流不对劲。这些平台永远不会给你。
 CREATE TABLE IF NOT EXISTS creator_notes (
