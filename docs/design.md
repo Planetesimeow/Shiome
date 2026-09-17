@@ -12,7 +12,6 @@
 
 ```text
 截图 → AI 提取草稿 → 人工确认 → 作品指标 / 时序快照 / 账号统计
-作品 CSV → 表头与数据校验 → 作品指标
 内容画像手填 → 创作物
 作品 + 创作物 + 同账号基线 → 按需分析 → 缓存结果 / HTML 报告
 ```
@@ -37,7 +36,7 @@ AI 仅按需调用，花销单独记账。预算检查依据已记录金额，�
 
 The current goal is sustainable content directions, better viewing and follower growth. Account persona and goal notes remain user data; analyses must respect them and state when context is missing. A goal selector and complete goal-specific layouts are future work.
 
-Screenshots produce editable drafts before saving. CSV imports require one post per row. Accounts, creative descriptions, platform posts and observations remain separate; metric imports cannot overwrite creative descriptions. Five registered analyses use shared data readers and store results. Account statistics and notes are stored, but their integration into analyses is incomplete.
+Screenshots produce editable drafts before saving. Accounts, creative descriptions, platform posts and observations remain separate; metric updates cannot overwrite creative descriptions. Five registered analyses use shared data readers and store results. Account statistics and notes are stored, but their integration into analyses is incomplete.
 
 Baselines use the latest 20 normal posts within one account. Matching by post age, format and duration, per-metric sample counts, missing-value migration and grouped screenshot capture remain pending. Curve shape alone cannot establish moderation or distribution causes. Existing analysis records and schema migrations remain readable.
 

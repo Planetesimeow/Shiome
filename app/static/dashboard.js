@@ -71,7 +71,7 @@ async function loadVideos() {
       <button class="row-delete" title="删除这条视频及其快照/分析" onclick="deleteVideo(event, ${v.id}, this)">✕</button>`;
     list.appendChild(li);
   }
-  if (!state.posts.length) list.innerHTML = '<li class="empty-state">还没有作品。先上传创作者中心截图，或从工具中导入 CSV。</li>';
+  if (!state.posts.length) list.innerHTML = '<li class="empty-state">还没有作品。先上传创作者中心截图，核对后确认入库。</li>';
   document.getElementById("status-line").textContent = `${state.posts.length} 条作品`;
   document.getElementById("video-count").textContent = state.posts.length || "";
   updateHeroStats();
@@ -539,32 +539,6 @@ async function addSnapshot(btn) {
     if (revision === state.detailRevision) btn.disabled = false;
   }
 }
-
-// ---------- CSV 导入 ----------
-
-document.getElementById("csv-input").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  const formData = new FormData();
-  formData.append("file", file);
-  document.getElementById("status-line").textContent = "导入中...";
-  try {
-    const result = await api("/api/posts/import", { method: "POST", body: formData });
-    let msg = `新增 ${result.inserted} 条，更新 ${result.updated} 条`;
-    if (result.errors?.length) {
-      msg += `，${result.errors.length} 行有问题`;
-      console.warn("导入问题行：", result.errors);
-      alert("部分行未完整导入：\n" + result.errors.map((e) => `第${e.line}行：${e.error}`).join("\n"));
-    }
-    document.getElementById("status-line").textContent = msg;
-    await loadVideos();
-    await loadTrendChart();
-    await loadHeroBaseline();
-  } catch (err) {
-    document.getElementById("status-line").textContent = "导入失败: " + err.message;
-  }
-});
 
 // ---------- 截图上传 → 提取草稿 → 确认入库 ----------
 

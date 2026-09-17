@@ -14,10 +14,22 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.9] — 2026-09-18
+
+**Changed**
+- Integrate the reviewed CSV removal on top of the Phase 1 deployment integration, preserving the original removal commits.
+
 ### [0.3.0-dev.8] — 2026-09-18
 
 **Changed**
 - Integrate the remaining deployment guidance and stacked-branch workflow into the Phase 1 release sequence, preserving the original commits.
+
+### [0.3.0-dev.6] — 2026-09-17
+
+**Removed**
+- CSV import from the dashboard, API, parser, fixtures and dedicated tests. Screenshots
+  remain the capture workflow; existing records, migration support and screenshot upserts
+  are preserved. Current documentation no longer advertises CSV import.
 
 ### [0.3.0-dev.5] — 2026-09-17
 
@@ -207,10 +219,21 @@ Initial public release of the runnable skeleton.
 
 ### [未发布]
 
+### [0.3.0-dev.9] — 2026-09-18
+
+**调整**
+- 在 Phase 1 部署集成之上接入已审查的 CSV 完整移除，保留原始移除提交。
+
 ### [0.3.0-dev.8] — 2026-09-18
 
 **调整**
 - 将尚未进入 Phase 1 release 的部署说明和串联分支规范纳入集成序列，保留原始提交历史。
+
+### [0.3.0-dev.6] — 2026-09-17
+
+**移除**
+- 完整移除 CSV 的界面入口、API、解析器、样例和专属测试；采集统一使用截图。
+  保留已有记录、迁移兼容与截图更新逻辑，同步删除当前文档里的 CSV 使用说明。
 
 ### [0.3.0-dev.5] — 2026-09-17
 
