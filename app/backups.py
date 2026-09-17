@@ -38,6 +38,8 @@ async def daily_backups(interval_seconds: float = 3600):
         await asyncio.sleep(interval_seconds)
         try:
             path = await asyncio.to_thread(backup_db)
+            from app.identity import backup_all
+            await asyncio.to_thread(backup_all)
             if path:
                 logger.info("Daily snapshot created: %s", path.name)
         except Exception:

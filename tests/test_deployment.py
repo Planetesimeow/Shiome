@@ -71,7 +71,7 @@ def test_failed_snapshot_does_not_leave_partial_backup(tmp_path):
 
 
 def test_live_service_retries_daily_backup(monkeypatch):
-    from app import database
+    from app import database, identity
     calls = []
 
     def backup():
@@ -80,6 +80,7 @@ def test_live_service_retries_daily_backup(monkeypatch):
             raise OSError("temporary storage failure")
 
     monkeypatch.setattr(database, "backup_db", backup)
+    monkeypatch.setattr(identity, 'backup_all', lambda: None)
 
     async def run():
         task = asyncio.create_task(daily_backups(0.01))

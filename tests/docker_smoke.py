@@ -22,7 +22,8 @@ def main():
     # Never overwrite a deployed instance's secrets, even if someone runs this by mistake.
     with env_file.open("x", encoding="utf-8") as file:
         file.write(f"SHIOME_PASSWORD_HASH={hash_password('docker-test-password')}\n"
-                   f"SHIOME_SECRET_KEY={secrets.token_hex(32)}\nSHIOME_MONTHLY_BUDGET_USD=1\n")
+                   f"SHIOME_SECRET_KEY={secrets.token_hex(32)}\nSHIOME_MONTHLY_BUDGET_USD=1\n"
+                   "ANTHROPIC_API_KEY=container-tests-no-paid-calls\n")
     env = {**os.environ, "SHIOME_DOMAIN": "localhost"}
     command = ["docker", "compose", "--project-name", "shiome-ci-smoke", "--env-file", os.devnull,
                "-f", "compose.yaml", "-f", "deploy/compose.small.yaml"]
@@ -58,6 +59,13 @@ def main():
         # Only the test service's named volume should persist through replacement.
         created = json.load(request("/api/posts", {"title": "container persistence test", "publish_date": "2026-09-11", "plays": 123}))
         assert created["id"]
+        setup = request('/api/auth/setup', {'username': 'container-owner', 'password': 'container-owner-password'})
+        assert setup.status == 200
+        invite = json.load(request('/api/admin/invitations', {}))
+        assert request('/api/auth/register', {'username': 'container-member', 'password': 'container-member-password', 'invitation': invite['token']}).status == 200
+        assert json.load(request('/api/posts')) == []
+        assert request('/api/admin/status').status == 403
+        assert request('/api/posts', {'title': 'member persistence test', 'publish_date': '2026-09-18'}).status == 200
         subprocess.run(command + ["up", "--detach", "--force-recreate", "--wait", "app"], env=env, check=True)
         # Caddy may briefly retain a connection to the old app container.
         for _ in range(30):
@@ -65,7 +73,11 @@ def main():
                 break
             time.sleep(1)
         posts = json.load(request("/api/posts"))
-        assert any(post["title"] == "container persistence test" for post in posts)
+        assert [post['title'] for post in posts] == ['member persistence test']
+        assert request('/api/auth/login', {'username': 'container-owner', 'password': 'container-owner-password'}).status == 200
+        posts = json.load(request('/api/posts'))
+        assert [post['title'] for post in posts] == ['container persistence test']
+        assert len(json.load(request('/api/admin/users'))) == 2
         backup = request("/api/backup").read()
         assert backup.startswith(b"SQLite format 3\x00")
         # Exercise real image decoding/resizing under the small-container memory limit.
@@ -75,7 +87,7 @@ def main():
             "buf=io.BytesIO(); im=Image.new('RGB',(4000,3000),'white'); im.save(buf,format='PNG'); "
             "del im; mime,data=prepare_image(buf.getvalue()); assert mime=='image/jpeg' and data; "
             "print('PASS 12 MP image preparation under memory limit')"], env=env, check=True)
-        print("PASS small Compose deployment: HTTPS, auth, literal secrets, persistence and backup")
+        print("PASS small Compose deployment: HTTPS, owner migration, invitation, per-user persistence and backup")
     finally:
         subprocess.run(command + ["logs", "--tail", "30"], env=env)
         subprocess.run(command + ["down", "--volumes"], env=env)

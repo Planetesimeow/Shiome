@@ -26,7 +26,7 @@
 
 ## 部署边界
 
-FastAPI + SQLite + 原生 HTML/CSS/JavaScript。当前为单用户网页版、单实例、单 worker；`owner_id` 不代表已经支持多租户。聊天功能尚未实现，新库不再提前创建对话占位表；旧版本已创建的表和数据保留。迁移、备份和历史数据读取继续兼容。
+FastAPI + SQLite + 原生 HTML/CSS/JavaScript。当前为邀请制多用户网页版、单实例、单 worker。登录身份单独存储，每位用户使用独立数据文件，请求上下文决定数据库；隔离不依赖客户端传入的 `owner_id`。共享模型密钥仅管理员可配置，网页保存时加密，个人备份不含身份库。见[账号与隔离](multi-user.md)。聊天功能尚未实现，旧版迁移和历史数据继续兼容。
 
 公网入口通过 Caddy 提供 HTTPS；生产启动检查口令哈希和会话密钥。数据库放在持久卷，运行期间每天备份，可登录下载并恢复到新文件。异地备份仍需另行配置，详见[部署指南](deployment.md)。
 
@@ -40,4 +40,4 @@ Screenshots produce editable drafts before saving. Accounts, creative descriptio
 
 Baselines use the latest 20 normal posts within one account. Matching by post age, format and duration, per-metric sample counts, missing-value migration and grouped screenshot capture remain pending. Curve shape alone cannot establish moderation or distribution causes. Existing analysis records and schema migrations remain readable.
 
-Deployment is one authenticated FastAPI worker with persistent SQLite, Caddy HTTPS and daily local backups. Reserved ownership fields do not provide multi-user isolation; chat is not implemented. New databases no longer create speculative conversation tables, while existing tables and data remain intact. The creator's VPS restart, offsite backup restoration and iPhone upload/recognition have been verified; continuous automatic offsite backups remain unconfigured. API budget checks use recorded costs and cannot guarantee an exact provider bill.
+Deployment is one authenticated FastAPI worker with Caddy HTTPS, a private identity store, one SQLite database per user and daily local backups. Verified sessions select the data file for every request and its thread-pool work. Personal exports exclude identities and other users. The administrator manages a shared encrypted model key and service-wide recorded-cost budget. Chat and automatic offsite backups remain unimplemented; budget checks cannot guarantee an exact provider bill.

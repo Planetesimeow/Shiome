@@ -4,7 +4,7 @@
 
 帮助创作者找到稳定的内容方向，提升观看和涨粉。将创作者中心截图转成可核对的数据，结合内容描述和历史表现，按需生成分析。
 
-当前为**单用户网页版试运行版本**，主要支持抖音。个人实例已于 2026-09-17 部署到 VPS，iPhone 上传与真实截图识别已验证；新建自己的实例请按[部署指南](docs/deployment.md)配置服务器、HTTPS 与凭据。版本见 [`app/__init__.py`](app/__init__.py)。
+当前支持**邀请制多用户网页版**，主要服务抖音创作者。管理员配置一次共享 AI 密钥，用户用各自的用户名和密码登录，作品、分析与备份按人隔离。已有个人实例升级后，先用原口令创建管理员账号，原有数据保留；见[账号与隔离说明](docs/multi-user.md)和[部署指南](docs/deployment.md)。版本见 [`app/__init__.py`](app/__init__.py)。
 
 ## 已有功能
 
@@ -37,7 +37,7 @@ cp .env.example .env
 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-打开 [本地应用](http://127.0.0.1:8000)。`.env` 会自动加载；浏览和手动编辑无需模型 key，截图识别和文本分析才需要相应凭据。未配登录时仅接受本机访问。手机远程使用按[部署指南](docs/deployment.md)配置 HTTPS 与登录。
+打开 [本地应用](http://127.0.0.1:8000)。`.env` 会自动加载；首次网页设置需要保存一次共享 Anthropic key，已有环境配置会直接沿用。之后浏览和手动编辑不调用模型；截图识别和分析才会产生 AI 费用。未配初始化口令时仅允许本机创建首个管理员。手机远程使用按[部署指南](docs/deployment.md)配置 HTTPS 与登录。
 
 ## 数据和目录
 
@@ -81,9 +81,9 @@ CI 覆盖 Python 3.11 / 3.12、Chromium / WebKit 的手机流程，以及实际 
 
 Shiome helps creators find repeatable content directions and improve viewing and follower growth. It turns creator-center screenshots into editable drafts, keeps post metrics separate from creative descriptions, and runs five analyses on demand.
 
-This is a single-user web pilot, currently focused on Douyin. The creator's VPS instance has been deployed, with real iPhone upload and screenshot recognition verified on September 17, 2026. Mobile navigation, login, screenshot confirmation, metrics, snapshots, reports, API cost tracking and backup tools are implemented. New installations require their own server, HTTPS and credentials; see [deployment](docs/deployment.md).
+This is an invite-only web app, currently focused on Douyin. The administrator configures a shared Anthropic key once; users have separate logins, databases and personal exports. Existing personal data stays with the first administrator. Analysis and screenshot recognition default to Claude Sonnet 5. See [accounts and isolation](docs/multi-user.md) and [deployment](docs/deployment.md).
 
-Use Python 3.11 or 3.12 and the commands above. Browsing and manual editing do not require a model key. Phone access requires configured authentication and HTTPS. Data defaults to `app/data/shiome.db`; personal screenshots, databases and secrets are excluded from Git and Docker images.
+Use Python 3.11 or 3.12 and the commands above. Initial owner setup requires a shared model key, reusing an existing environment key when available. Browsing and manual editing make no model calls. Phone access requires configured authentication and HTTPS. Data defaults to `app/data/shiome.db`; personal screenshots, databases and secrets are excluded from Git and Docker images.
 
 The [current design](docs/design.md) and [roadmap](docs/roadmap-v2.md) distinguish working features from pending screenshot grouping, missing-value handling, goal selection and additional platforms. Analyses are hypotheses based on supplied data, not measurements of a platform's internal algorithm.
 

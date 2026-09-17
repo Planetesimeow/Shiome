@@ -1,6 +1,6 @@
 """
-数据层。SQLite，单文件、零配置，够一个创作者的规模用很久。
-以后真的有第二个用户登录了再谈 Postgres —— 结构不用大改。
+数据层。每位登录用户使用独立 SQLite 文件，身份与共享密钥另存。
+请求中通过 ContextVar 选择数据库，线程池继承当前请求的上下文。
 
 v2 的核心变化：一张 videos 表拆成四张。
 - accounts   一个创作者在一个平台上的账号（人设存在这里，不再写死在 prompts.py）
@@ -18,6 +18,7 @@ import shutil
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 # 默认落在 app/data/shiome.db；设 SHIOME_DB_PATH 可指向别处（比如测试用一次性库，
 # 不污染真实数据）。v1 时期这个文件叫 douyin.db —— 工具已经不只服务抖音了，改名，
@@ -25,10 +26,32 @@ from contextlib import contextmanager
 _DEFAULT_DB_PATH = Path(__file__).parent / "data" / "shiome.db"
 _LEGACY_DB_PATH = Path(__file__).parent / "data" / "douyin.db"
 DB_PATH = Path(os.environ.get("SHIOME_DB_PATH", _DEFAULT_DB_PATH))
+_request_database: ContextVar[Path | None] = ContextVar("shiome_database", default=None)
+_request_user: ContextVar[str | None] = ContextVar("shiome_user", default=None)
+
+
+def current_db_path() -> Path:
+    """The middleware selects this from a verified identity, never from request input."""
+    return _request_database.get() or DB_PATH
+
+
+def current_user_id() -> str | None:
+    return _request_user.get()
+
+
+@contextmanager
+def database_scope(path: Path, user_id: str | None = None):
+    path_token = _request_database.set(path)
+    user_token = _request_user.set(user_id)
+    try:
+        yield
+    finally:
+        _request_user.reset(user_token)
+        _request_database.reset(path_token)
 
 SCHEMA = """
--- 一个创作者在一个平台上的账号。owner_id 是多用户的预留：
--- 当前鉴权与前端仍是单用户；预留字段不代表已实现租户隔离。
+-- 一个创作者在一个平台上的账号。owner_id 保留历史格式；
+-- 登录用户隔离由服务器选择独立数据库完成，不接受客户端指定数据文件。
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id TEXT NOT NULL DEFAULT 'local',
@@ -210,7 +233,7 @@ def _adopt_legacy_db():
     只在用默认路径、且新文件还不存在、旧文件在的时候，把旧库**复制**成新库
     —— 复制不是移动：旧文件原地不动，万一迁移出问题还能回去。
     """
-    if DB_PATH != _DEFAULT_DB_PATH or DB_PATH.exists() or not _LEGACY_DB_PATH.exists():
+    if current_db_path() != _DEFAULT_DB_PATH or current_db_path().exists() or not _LEGACY_DB_PATH.exists():
         return
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(_LEGACY_DB_PATH, DB_PATH)
@@ -218,7 +241,7 @@ def _adopt_legacy_db():
 
 
 def init_db():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    current_db_path().parent.mkdir(parents=True, exist_ok=True)
     _adopt_legacy_db()
     with get_conn() as conn:
         conn.executescript(SCHEMA)
@@ -236,27 +259,28 @@ def backup_db(keep: int = 10, tag: str | None = None):
 
     tag 用于结构迁移前的一次性备份（文件名带标记，不参与每日轮转的清理）。
     """
-    if not DB_PATH.exists():
+    path = current_db_path()
+    if not path.exists():
         return None
-    backup_dir = DB_PATH.parent / "backups"
+    backup_dir = path.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     from datetime import date
     stamp = date.today().isoformat()
-    name = f"{DB_PATH.stem}-{tag}-{stamp}" if tag else f"{DB_PATH.stem}-{stamp}"
-    dest = backup_dir / f"{name}{DB_PATH.suffix}"
+    name = f"{path.stem}-{tag}-{stamp}" if tag else f"{path.stem}-{stamp}"
+    dest = backup_dir / f"{name}{path.suffix}"
     if dest.exists():
         return None  # 今天已经备份过（同 tag）
     from app.backups import snapshot
-    snapshot(DB_PATH, dest)
+    snapshot(path, dest)
     if tag is None:  # 只轮转每日备份，带 tag 的迁移前备份一律保留
-        for old in sorted(backup_dir.glob(f"{DB_PATH.stem}-20*{DB_PATH.suffix}"))[:-keep]:
+        for old in sorted(backup_dir.glob(f"{path.stem}-20*{path.suffix}"))[:-keep]:
             old.unlink()
     return dest
 
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(current_db_path(), timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:

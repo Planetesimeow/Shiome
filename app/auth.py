@@ -62,16 +62,19 @@ def _unb64(text: str) -> bytes:
     return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
 
 
-def make_session(owner_id: str, secret: str, days: int = DEFAULT_SESSION_DAYS) -> str:
-    payload = _b64(json.dumps({"sub": owner_id,
-                               "exp": int(time.time()) + days * 86400}).encode())
+def make_session(owner_id: str, secret: str, days: int = DEFAULT_SESSION_DAYS,
+                 session_version: int | None = None) -> str:
+    data = {"sub": owner_id, "exp": int(time.time()) + days * 86400}
+    if session_version is not None:
+        data["ver"] = session_version
+    payload = _b64(json.dumps(data).encode())
     sig = _b64(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest())
     return f"{payload}.{sig}"
 
 
 def read_session(token: str | None, secret: str) -> dict | None:
     """验签 + 查过期。任何一步不对都返回 None —— 不区分原因，也不抛异常。"""
-    if not token or "." not in token:
+    if not token or not token.isascii() or "." not in token:
         return None
     payload, _, sig = token.partition(".")
     expected = _b64(hmac.new(secret.encode(), payload.encode(), hashlib.sha256).digest())
@@ -81,7 +84,9 @@ def read_session(token: str | None, secret: str) -> dict | None:
         data = json.loads(_unb64(payload))
     except (ValueError, json.JSONDecodeError):
         return None
-    if not isinstance(data, dict) or data.get("exp", 0) < time.time():
+    if (not isinstance(data, dict) or not isinstance(data.get("sub"), str)
+            or not isinstance(data.get("exp"), (int, float))
+            or not data["exp"] > time.time()):
         return None
     return data
 

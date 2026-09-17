@@ -1,9 +1,12 @@
 const state = { posts: [], selectedId: null, activeTab: "enhancement", detailRevision: 0, analysisRevision: 0 };
 const pendingAnalyses = new Map();
 const PORTFOLIO_LEVEL_TYPES = ["content_ideas", "creator_profile"]; // 不依赖单条视频的分析类型
+let signedInUserId = null;
 
 async function api(path, options = {}) {
-  const res = await fetch(path, options);
+  const headers = new Headers(options.headers);
+  if (signedInUserId) headers.set('X-Shiome-User', signedInUserId);
+  const res = await fetch(path, { ...options, headers });
   if (res.status === 401) {
     // Keep an extracted draft on screen; login in another tab then retry saving.
     document.getElementById("reauth-notice").hidden = false;
@@ -11,6 +14,7 @@ async function api(path, options = {}) {
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    if (body.account_changed) window.location.replace('/');
     throw new Error(typeof body.detail === "string" ? body.detail : `请求失败（${res.status}）`);
   }
   if (!path.startsWith("/api/auth/") && path !== "/api/version") document.getElementById("reauth-notice").hidden = true;
@@ -739,7 +743,7 @@ async function loadUsage() {
     const spent = `$${u.spent_usd.toFixed(2)}`;
     el.textContent = u.limit_usd != null
       ? `本月 ${spent} / $${u.limit_usd.toFixed(2)}`
-      : `本月 ${spent}`;
+      : `本月 ${spent}${u.shared_billing ? ' · 管理员付费' : ''}`;
     // 快到上限时变色：钱花完了才发现，比提前看见要糟
     el.style.color = u.over_budget ? "var(--danger)"
       : (u.limit_usd != null && u.spent_usd / u.limit_usd > 0.8) ? "var(--accent)" : "";
@@ -751,13 +755,13 @@ async function loadUsage() {
 
 // ---------- 鉴权 ----------
 
-// 只在服务端确实配了口令时才显示退出按钮：本机跑的时候没有登录这回事，
-// 摆一个点了没反应的按钮只会让人困惑。
 async function initAuth() {
-  try {
-    const s = await api("/api/auth/status");
-    if (s.configured) document.getElementById("logout-btn").style.display = "";
-  } catch (e) { /* 拿不到就当没配 */ }
+  const s = await api("/api/auth/status");
+  if (!s.authenticated) { window.location.replace('/login'); return false; }
+  if (s.setup_required) { window.location.replace('/setup'); return false; }
+  signedInUserId = s.user.id;
+  document.getElementById("logout-btn").style.display = "";
+  return true;
 }
 
 async function logout() {
@@ -771,12 +775,22 @@ async function logout() {
 
 // ---------- 初始化 ----------
 
-loadUsage();
-initAuth();
-Promise.all([loadVideos(), loadTrendChart(), loadHeroBaseline(), loadDuplicateCandidates()])
+initAuth().then(ready => {
+  if (ready) return Promise.all([loadUsage(), loadVideos(), loadTrendChart(), loadHeroBaseline(), loadDuplicateCandidates()]);
+})
   .catch((err) => {
     if (!err.message.startsWith("登录已过期")) document.getElementById("status-line").textContent = "加载失败：" + err.message;
   });
+
+// Other tabs share the login cookie. Never reuse one person's draft under a different login.
+window.addEventListener('focus', async () => {
+  if (!signedInUserId) return;
+  try {
+    const status = await api('/api/auth/status');
+    if (status.user && status.user.id !== signedInUserId) window.location.replace('/');
+    else if (!status.authenticated) document.getElementById('reauth-notice').hidden = false;
+  } catch (_) { /* Keep unsaved work if the connection is temporarily unavailable. */ }
+});
 
 
 // ---------- 疑似重复的作品（发现由机器做，合并由人确认）----------
