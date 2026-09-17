@@ -41,7 +41,6 @@ from app.models import (
 from app.dedupe import find_duplicate_candidates, merge_posts, title_similarity, \
     TITLE_SIMILARITY_THRESHOLD
 from app.vision import extract_screenshot
-from app.ingestion import parse_creator_center_csv
 from app.analysis.prompts import compute_baseline, get_account
 from app.analysis.registry import ANALYSES, list_analyses, POST_SCOPE, ACCOUNT_SCOPE
 from app.report import build_report_html
@@ -315,14 +314,14 @@ def update_creative(creative_id: int, patch: CreativePatch):
 
 # ---------- 作品（发布）----------
 
-# 数据指标列：CSV 导入和截图提取共用的 upsert 白名单。
+# 截图确认入库允许更新的数据指标列。
 # 内容画像字段不在这里，也不可能在 —— v2 之后它们根本不在 posts 表上，
 # 数据同步在结构上就碰不到手填的内容。
 _METRIC_COLS = [
     "platform_post_id", "duration_sec", "plays", "likes", "comments", "shares", "saves",
     "completion_rate", "avg_watch_time", "profile_visits", "new_followers",
     "danmaku_count", "cover_ctr", "bounce_2s_rate", "unfollows", "fan_conversion_rate",
-    "raw_data", "platform_data",
+    "platform_data",
 ]
 
 
@@ -397,30 +396,6 @@ def add_post(post: PostIn):
             + [data[c] for c in cols],
         )
         return {"id": cur.lastrowid}
-
-
-@app.post("/api/posts/import")
-async def import_csv(file: UploadFile = File(...), account_id: int | None = None):
-    """
-    导入创作者中心 CSV。重复导入不会产生重复行：有作品 ID 就按它匹配，
-    否则按 同账号+同发布日期+标题高度相似 匹配。单行解析失败会被跳过并逐行报告。
-    """
-    content = await file.read()
-    try:
-        records, errors = parse_creator_center_csv(content)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-    inserted = updated = 0
-    with get_conn() as conn:
-        account = _resolve_account(conn, account_id)
-        for r in records:
-            _, action = upsert_post(conn, r, account["id"], account["platform"])
-            if action == "inserted":
-                inserted += 1
-            else:
-                updated += 1
-    return {"inserted": inserted, "updated": updated, "errors": errors}
 
 
 # 注意：这两个字面量路由必须写在 /api/posts/{post_id} 前面，否则会被当成 post_id 去解析。

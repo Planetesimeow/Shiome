@@ -39,11 +39,6 @@ def vision_data() -> dict:
 
 
 @pytest.fixture
-def csv_bytes() -> bytes:
-    return (FIXTURES / "sample_import.csv").read_bytes()
-
-
-@pytest.fixture
 def db_path(tmp_path, monkeypatch):
     """把整个 app 指向一次性测试库。"""
     from app import database

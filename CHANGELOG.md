@@ -14,6 +14,13 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0-dev.6] — 2026-09-17
+
+**Removed**
+- CSV import from the dashboard, API, parser, fixtures and dedicated tests. Screenshots
+  remain the capture workflow; existing records, migration support and screenshot upserts
+  are preserved. Current documentation no longer advertises CSV import.
+
 ### [0.3.0-dev.5] — 2026-09-17
 
 **Added**
@@ -201,6 +208,12 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0-dev.6] — 2026-09-17
+
+**移除**
+- 完整移除 CSV 的界面入口、API、解析器、样例和专属测试；采集统一使用截图。
+  保留已有记录、迁移兼容与截图更新逻辑，同步删除当前文档里的 CSV 使用说明。
 
 ### [0.3.0-dev.5] — 2026-09-17
 
