@@ -1,5 +1,14 @@
 # Shiome working agreement
 
+## Phase 2 — creator instruction, 2026-09-18
+
+- The creator opened `release/phase-2-dataprocessing` from `main`; it is the current
+  integration branch. Keep `release/phase-1-hosting` until the creator requests its deletion.
+- Phase 2 targets `1.0.0`, starting at `1.0.0-dev.1`. Keep historical `0.x` releases intact.
+- Follow [the Phase 2 plan](docs/phase-2-data-plan.md). First define metric semantics and
+  provenance, then imports and screenshot observations, deterministic statistics and AI feedback.
+- Treat the plan as pending implementation. Do not advertise planned features as available.
+
 ## Branches — creator instruction, 2026-09-11
 
 - Before starting any new feature, independent fix, cleanup or documentation change,
@@ -26,6 +35,10 @@
   container CI for deployment checks; do not restart Docker Desktop without a new request.
 
 ## 创作者约定
+
+2026-09-18 更新：当前承接分支为 `release/phase-2-dataprocessing`，目标版本 `1.0.0`，
+开发版从 `1.0.0-dev.1` 递增。保留 `release/phase-1-hosting`，直到创作者明确要求删除。
+按 [Phase 2 方案](docs/phase-2-data-plan.md) 推进；规划中的能力不能写成已经实现。
 
 每个新功能、独立修复、清理或文档变更，无论大小，都先从前一个工作分支新建分支，
 PR 指向前一个分支。一个分支只承载一件完整的事，同一件事的审查修正可以继续提交。

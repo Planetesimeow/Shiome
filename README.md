@@ -75,7 +75,7 @@ CI 覆盖 Python 3.11 / 3.12、Chromium / WebKit 的手机流程，以及实际 
 
 ## 文档
 
-[当前设计](docs/design.md) · [路线图与未完成事项](docs/roadmap-v2.md) · [截图采集](docs/capture-guide.md) · [部署与备份](docs/deployment.md) · [分支发布约定](docs/workflow.md) · [开发日志](docs/devlog/README.md) · [更新记录](CHANGELOG.md)
+[当前设计](docs/design.md) · [路线图与未完成事项](docs/roadmap-v2.md) · [Phase 2 数据处理方案](docs/phase-2-data-plan.md) · [截图采集](docs/capture-guide.md) · [部署与备份](docs/deployment.md) · [分支发布约定](docs/workflow.md) · [开发日志](docs/devlog/README.md) · [更新记录](CHANGELOG.md)
 
 ## English
 
