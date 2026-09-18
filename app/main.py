@@ -5,20 +5,31 @@ v2 的 API 是破坏性重命名过的：/api/videos* → /api/posts*，另外�
 / creator-notes / duplicate-candidates。没有保留旧路径的兼容别名 —— 唯一的调用方就是
 我们自己的前端，留着两套名字只会让新来的人不知道该用哪个。
 """
+import asyncio
 import json
+import sqlite3
+import tempfile
 from pathlib import Path
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing, suppress
 
 from app import __version__
+from app import database, identity
+from app.identity_routes import router as identity_router
+from app.backups import daily_backups, snapshot
+from app.auth import (
+    AuthConfig, LoginThrottle, SESSION_COOKIE, is_loopback, read_session,
+)
 from app.database import (
     init_db, get_conn, post_falls_in_anomaly, get_snapshots, backup_db,
     get_default_account_id,
@@ -30,21 +41,154 @@ from app.models import (
 from app.dedupe import find_duplicate_candidates, merge_posts, title_similarity, \
     TITLE_SIMILARITY_THRESHOLD
 from app.vision import extract_screenshot
-from app.ingestion import parse_creator_center_csv
 from app.analysis.prompts import compute_baseline, get_account
 from app.analysis.registry import ANALYSES, list_analyses, POST_SCOPE, ACCOUNT_SCOPE
 from app.report import build_report_html
+from app.usage import budget_blocked, month_spend
+
+
+AUTH = AuthConfig()
+THROTTLE = LoginThrottle()
+
+# 不需要登录就能访问的路径。刻意列得很短：
+# 登录页本身、登录接口、问「我登录了吗」、以及版本号（排查问题时要能拿到）。
+PUBLIC_PATHS = {"/login", "/setup", "/register", "/api/auth/register",
+                "/api/auth/login", "/api/auth/status", "/api/version",
+                "/favicon.ico", "/healthz"}
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    AUTH.validate()
+    identity.init_store()
+    for user in identity.list_users():
+        path = identity.data_path(user)
+        if not path.is_file():
+            raise RuntimeError('A registered user database is missing; restore it before starting')
     init_db()          # 建表 + 跑结构迁移（v1→v2 会自己先备份）
+    for user in identity.list_users():
+        path = identity.data_path(user)
+        if path != database.DB_PATH:
+            with database.database_scope(path, user['id']):
+                init_db()
     backup_db()        # 每天首启快照一份，防云同步弄坏唯一的手录数据
-    yield
+    identity.backup_all()
+    if not AUTH.configured:
+        print("[shiome] 未配置鉴权：只接受来自本机的请求。"
+              "要放到公网上，先设 SHIOME_PASSWORD_HASH（用 python -m scripts.set_password 生成）。")
+    elif AUTH.secret_derived:
+        print("[shiome] 提示：没设 SHIOME_SECRET_KEY，会话密钥从口令哈希派生。"
+              "改口令会让所有人重新登录一次。")
+    backup_task = asyncio.create_task(daily_backups())
+    try:
+        yield
+    finally:
+        backup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await backup_task
 
 
 app = FastAPI(title="潮目 Shiome", version=__version__, lifespan=lifespan)
 STATIC_DIR = Path(__file__).parent / "static"
+app.include_router(identity_router)
+
+
+def _client_key(request: Request) -> str:
+    return (request.client.host if request.client else "") or "unknown"
+
+
+def _authenticated_principal(request: Request) -> dict | None:
+    """Resolve a server-owned identity before selecting any data file."""
+    if not AUTH.configured and not is_loopback(_client_key(request)):
+        return None
+    registered = identity.has_users()
+    header = request.headers.get("authorization", "")
+    if AUTH.api_token and header.lower().startswith("bearer "):
+        import hmac
+        if hmac.compare_digest(header[7:].strip(), AUTH.api_token):
+            user = identity.legacy_user() if registered else {'id': AUTH.owner_id, 'legacy': True}
+            return user if user and user.get('active', True) else None
+    session = read_session(request.cookies.get(SESSION_COOKIE), AUTH.secret)
+    if registered:
+        user = identity.get_user(session['sub']) if session else None
+        return user if (user and user['active'] and session.get('ver') == user['session_version']) else None
+    if session and session.get('sub') == AUTH.owner_id:
+        return {'id': AUTH.owner_id, 'legacy': True}
+    if not AUTH.configured and is_loopback(_client_key(request)):
+        return {'id': AUTH.owner_id, 'legacy': True}
+    return None
+
+
+@app.middleware("http")
+async def require_auth(request: Request, call_next):
+    path = request.url.path
+    if request.method not in {'GET', 'HEAD', 'OPTIONS'}:
+        origin = request.headers.get('origin')
+        if origin and origin != str(request.base_url).rstrip('/'):
+            return JSONResponse({'detail': '请求来源不匹配'}, status_code=403)
+    if path.startswith('/static/') or path in PUBLIC_PATHS:
+        return await call_next(request)
+    user = _authenticated_principal(request)
+    if user is None:
+        if not AUTH.configured and not identity.has_users():
+            return JSONResponse({'detail': '这个实例尚未配置鉴权，只接受本机访问'}, status_code=403)
+        if 'text/html' in request.headers.get('accept', ''):
+            return RedirectResponse('/login', status_code=303)
+        return JSONResponse({'detail': '需要登录'}, status_code=401)
+    request.state.user = user
+    request.state.owner_id = user['id']
+    expected_user = request.headers.get('x-shiome-user')
+    if expected_user and expected_user != user['id']:
+        return JSONResponse({'detail': '登录账号已切换，请刷新页面后继续', 'account_changed': True}, status_code=409)
+    path = database.DB_PATH if user.get('legacy') else identity.data_path(user)
+    if not path.is_file():
+        return JSONResponse({'detail': '数据暂不可用，请联系管理员'}, status_code=503)
+    with database.database_scope(path, None if user.get('legacy') else user['id']):
+        return await call_next(request)
+
+
+@app.middleware("http")
+async def private_responses(request: Request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    return response
+
+
+@app.get("/api/version")
+def get_version_public():
+    """公开：排查问题时不用先登录才能知道对面跑的是哪一版。"""
+    return {"version": __version__}
+
+
+@app.get("/healthz")
+def health():
+    """Readiness without returning account data or creating a missing database."""
+    try:
+        with closing(sqlite3.connect(database.DB_PATH.resolve().as_uri() + "?mode=ro", uri=True)) as conn:
+            conn.execute("SELECT id FROM accounts LIMIT 1").fetchone()
+        with identity.connection() as conn:
+            conn.execute('SELECT id FROM users LIMIT 1').fetchone()
+    except sqlite3.Error:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "ok"}
+
+
+@app.get("/api/backup")
+def download_backup():
+    """Authenticated, fresh database export for storage away from the server."""
+    temp = tempfile.TemporaryDirectory(prefix="shiome-export-")
+    name = "shiome-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + ".db"
+    path = Path(temp.name) / name
+    try:
+        snapshot(database.current_db_path(), path)
+    except Exception:
+        temp.cleanup()
+        raise
+    return FileResponse(path, media_type="application/octet-stream", filename=name,
+                        background=BackgroundTask(temp.cleanup))
 
 
 def _resolve_account(conn, account_id: int | None) -> dict:
@@ -57,16 +201,11 @@ def _resolve_account(conn, account_id: int | None) -> dict:
     return account
 
 
-@app.get("/api/version")
-def get_version():
-    """跑的是哪一版。前端在页脚显示，排查问题时不用猜。"""
-    return {"version": __version__}
-
-
 # ---------- 账号 ----------
 
 @app.get("/api/accounts")
-def list_accounts(owner_id: str = "local"):
+def list_accounts():
+    owner_id = "local"
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM accounts WHERE owner_id = ? ORDER BY id", (owner_id,)
@@ -75,7 +214,8 @@ def list_accounts(owner_id: str = "local"):
 
 
 @app.post("/api/accounts")
-def create_account(account: AccountIn, owner_id: str = "local"):
+def create_account(account: AccountIn):
+    owner_id = "local"
     with get_conn() as conn:
         cur = conn.execute(
             """INSERT INTO accounts (owner_id, platform, handle, display_name, persona, goal_note)
@@ -104,7 +244,8 @@ def update_account(account_id: int, patch: AccountPatch):
 # ---------- 创作物（内容画像住这里，一条内容发多平台只填一次）----------
 
 @app.get("/api/creatives")
-def list_creatives(owner_id: str = "local", limit: int = 100):
+def list_creatives(limit: int = 100):
+    owner_id = "local"
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM creatives WHERE owner_id = ? ORDER BY id DESC LIMIT ?",
@@ -114,7 +255,8 @@ def list_creatives(owner_id: str = "local", limit: int = 100):
 
 
 @app.post("/api/creatives")
-def create_creative(creative: CreativeIn, owner_id: str = "local"):
+def create_creative(creative: CreativeIn):
+    owner_id = "local"
     with get_conn() as conn:
         return {"id": _insert_creative(conn, creative.model_dump(), owner_id)}
 
@@ -159,14 +301,14 @@ def update_creative(creative_id: int, patch: CreativePatch):
 
 # ---------- 作品（发布）----------
 
-# 数据指标列：CSV 导入和截图提取共用的 upsert 白名单。
+# 截图确认入库允许更新的数据指标列。
 # 内容画像字段不在这里，也不可能在 —— v2 之后它们根本不在 posts 表上，
 # 数据同步在结构上就碰不到手填的内容。
 _METRIC_COLS = [
     "platform_post_id", "duration_sec", "plays", "likes", "comments", "shares", "saves",
     "completion_rate", "avg_watch_time", "profile_visits", "new_followers",
     "danmaku_count", "cover_ctr", "bounce_2s_rate", "unfollows", "fan_conversion_rate",
-    "raw_data", "platform_data",
+    "platform_data",
 ]
 
 
@@ -241,30 +383,6 @@ def add_post(post: PostIn):
             + [data[c] for c in cols],
         )
         return {"id": cur.lastrowid}
-
-
-@app.post("/api/posts/import")
-async def import_csv(file: UploadFile = File(...), account_id: int | None = None):
-    """
-    导入创作者中心 CSV。重复导入不会产生重复行：有作品 ID 就按它匹配，
-    否则按 同账号+同发布日期+标题高度相似 匹配。单行解析失败会被跳过并逐行报告。
-    """
-    content = await file.read()
-    try:
-        records, errors = parse_creator_center_csv(content)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-    inserted = updated = 0
-    with get_conn() as conn:
-        account = _resolve_account(conn, account_id)
-        for r in records:
-            _, action = upsert_post(conn, r, account["id"], account["platform"])
-            if action == "inserted":
-                inserted += 1
-            else:
-                updated += 1
-    return {"inserted": inserted, "updated": updated, "errors": errors}
 
 
 # 注意：这两个字面量路由必须写在 /api/posts/{post_id} 前面，否则会被当成 post_id 去解析。
@@ -381,7 +499,8 @@ def list_snapshots(post_id: int):
 # ---------- 创作者笔记（助手要懂你，光有数字不够）----------
 
 @app.post("/api/creator-notes")
-def add_creator_note(note: CreatorNoteIn, owner_id: str = "local"):
+def add_creator_note(note: CreatorNoteIn):
+    owner_id = "local"
     with get_conn() as conn:
         account_id = note.account_id or get_default_account_id(conn)
         cur = conn.execute(
@@ -446,6 +565,8 @@ def run_post_analysis(post_id: int, analysis_type: str):
     if not spec or spec["scope"] != POST_SCOPE:
         raise HTTPException(404, f"没有这个单条作品分析：{analysis_type}")
     with get_conn() as conn:
+        if (blocked := budget_blocked(conn)) is not None:
+            return blocked
         row = conn.execute("SELECT account_id FROM posts WHERE id = ?", (post_id,)).fetchone()
         if not row:
             raise HTTPException(404, "post not found")
@@ -460,6 +581,8 @@ def run_account_analysis(analysis_type: str, account_id: int | None = None,
     if not spec or spec["scope"] != ACCOUNT_SCOPE:
         raise HTTPException(404, f"没有这个账号级分析：{analysis_type}")
     with get_conn() as conn:
+        if (blocked := budget_blocked(conn)) is not None:
+            return blocked
         account = _resolve_account(conn, account_id)
         return spec["run"](conn, account, limit)
 
@@ -486,6 +609,13 @@ def get_results(post_id: int | None = None, account_id: int | None = None,
             d["result_json"] = json.loads(d["result_json"])
             out.append(d)
         return out
+
+
+@app.get("/api/usage")
+def get_usage(month: str | None = None):
+    """本月 API 花销。没设上限时 limit_usd 为 null —— 统计照常，只是不拦。"""
+    with get_conn() as conn:
+        return month_spend(conn, month)
 
 
 @app.get("/api/baseline")
@@ -516,9 +646,14 @@ def trend_data(account_id: int | None = None):
 @app.post("/api/vision/extract")
 async def vision_extract(file: UploadFile = File(...)):
     """一张创作者中心截图 → 结构化草稿。只提取、不入库——数字必须经人确认。"""
-    content = await file.read()
+    with get_conn() as conn:
+        if (blocked := budget_blocked(conn)) is not None:
+            return blocked
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "截图超过 10 MB，请缩小后再上传。")
     try:
-        return extract_screenshot(content, file.content_type)
+        return await run_in_threadpool(extract_screenshot, content, file.content_type)
     except Exception as e:  # 图片本身打不开等本地问题
         raise HTTPException(400, f"图片无法处理：{e}")
 

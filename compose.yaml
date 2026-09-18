@@ -1,0 +1,49 @@
+name: shiome
+services:
+  app:
+    build: .
+    image: shiome:local
+    restart: unless-stopped
+    env_file:
+      - path: .env.production
+        format: raw
+    environment:
+      SHIOME_ENV: production
+      # Only Caddy can reach this port; it replaces untrusted forwarding headers.
+      FORWARDED_ALLOW_IPS: "*"
+      PORT: "8000"
+    volumes:
+      - shiome_data:/data
+    networks: [backend]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      SHIOME_DOMAIN: ${SHIOME_DOMAIN:?Set SHIOME_DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [backend]
+    depends_on:
+      app: {condition: service_healthy}
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+networks:
+  backend:
+volumes:
+  shiome_data:
+  caddy_data:
+  caddy_config:

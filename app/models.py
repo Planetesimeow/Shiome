@@ -8,7 +8,7 @@ v2 的实体拆分体现在这里：creative（你做的东西）和 post（发�
 from pydantic import BaseModel
 from typing import Literal, Optional
 
-# v1.0.0 只有 douyin；小红书 Phase 3、B站 Phase 4
+# 数据模型预留多平台；当前界面和分析主要覆盖抖音，见路线图。
 Platform = Literal["douyin", "xiaohongshu", "bilibili"]
 MediaType = Literal["video", "image_text"]
 

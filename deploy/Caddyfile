@@ -1,0 +1,12 @@
+{$SHIOME_DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 12MB
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Frame-Options "DENY"
+        -Server
+    }
+    reverse_proxy app:8000
+}

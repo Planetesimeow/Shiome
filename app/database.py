@@ -1,6 +1,6 @@
 """
-数据层。SQLite，单文件、零配置，够一个创作者的规模用很久。
-以后真的有第二个用户登录了再谈 Postgres —— 结构不用大改。
+数据层。每位登录用户使用独立 SQLite 文件，身份与共享密钥另存。
+请求中通过 ContextVar 选择数据库，线程池继承当前请求的上下文。
 
 v2 的核心变化：一张 videos 表拆成四张。
 - accounts   一个创作者在一个平台上的账号（人设存在这里，不再写死在 prompts.py）
@@ -11,13 +11,14 @@ v2 的核心变化：一张 videos 表拆成四张。
 为什么要拆：一条视频同时发抖音/小红书/B站，是"一个创作决定 + 三套完全不同的数字"。
 混在一张表里，内容画像要填三遍，而且永远问不出"同一个钩子在这个平台活了、在那个平台
 死了，说明两边分别推给了谁"——而那个问题才是把三个平台放进一个工具的理由。
-详见 docs/roadmap-v2.md。
+详见 docs/design.md。
 """
 import os
 import shutil
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 # 默认落在 app/data/shiome.db；设 SHIOME_DB_PATH 可指向别处（比如测试用一次性库，
 # 不污染真实数据）。v1 时期这个文件叫 douyin.db —— 工具已经不只服务抖音了，改名，
@@ -25,10 +26,32 @@ from contextlib import contextmanager
 _DEFAULT_DB_PATH = Path(__file__).parent / "data" / "shiome.db"
 _LEGACY_DB_PATH = Path(__file__).parent / "data" / "douyin.db"
 DB_PATH = Path(os.environ.get("SHIOME_DB_PATH", _DEFAULT_DB_PATH))
+_request_database: ContextVar[Path | None] = ContextVar("shiome_database", default=None)
+_request_user: ContextVar[str | None] = ContextVar("shiome_user", default=None)
+
+
+def current_db_path() -> Path:
+    """The middleware selects this from a verified identity, never from request input."""
+    return _request_database.get() or DB_PATH
+
+
+def current_user_id() -> str | None:
+    return _request_user.get()
+
+
+@contextmanager
+def database_scope(path: Path, user_id: str | None = None):
+    path_token = _request_database.set(path)
+    user_token = _request_user.set(user_id)
+    try:
+        yield
+    finally:
+        _request_user.reset(user_token)
+        _request_database.reset(path_token)
 
 SCHEMA = """
--- 一个创作者在一个平台上的账号。owner_id 是多用户的预留：
--- 今天只有一个人用，但不写任何"假设只有一个用户"的查询，将来就不用重写。
+-- 一个创作者在一个平台上的账号。owner_id 保留历史格式；
+-- 登录用户隔离由服务器选择独立数据库完成，不接受客户端指定数据文件。
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_id TEXT NOT NULL DEFAULT 'local',
@@ -166,34 +189,6 @@ CREATE TABLE IF NOT EXISTS account_metrics (
     source TEXT DEFAULT 'vision'
 );
 
--- ---- 对话式助手的插槽（Phase 5 才建功能，表结构现在就留好）----
--- 现在建表、以后再建功能，是因为加表最贵的时机是"已经部署、已经有线上数据之后"。
--- 助手要能记住上下文，所以对话必须落库，而不是只活在前端内存里。
-
-CREATE TABLE IF NOT EXISTS conversations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_id TEXT NOT NULL DEFAULT 'local',
-    account_id INTEGER REFERENCES accounts(id),  -- 可空：跨账号的对话
-    title TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    conversation_id INTEGER NOT NULL REFERENCES conversations(id),
-    role TEXT NOT NULL,                  -- user / assistant / tool
-    content TEXT NOT NULL,
-    tool_calls TEXT,                     -- JSON：助手调用了哪些分析/查询
-    model_used TEXT,
-    input_tokens INTEGER,
-    output_tokens INTEGER,
-    duration_ms INTEGER,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, id);
-
 -- 创作者自己写下的想法。助手要"懂你"，光有数字不够 —— 还得知道你怎么想：
 -- 想转的方向、对某条片子的判断、这周觉得推流不对劲。这些平台永远不会给你。
 CREATE TABLE IF NOT EXISTS creator_notes (
@@ -205,6 +200,24 @@ CREATE TABLE IF NOT EXISTS creator_notes (
     body TEXT NOT NULL,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 每一次模型调用的账本。分析结果自己也存了 token 数，但那份只覆盖分析：
+-- 截图提取不落 analysis_results（它产出的是待确认草稿），而它很可能是花销大头。
+-- 只统计分析的话，账单上最大的一块是看不见的。
+CREATE TABLE IF NOT EXISTS api_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    month TEXT NOT NULL,                 -- YYYY-MM，按月加总用
+    provider TEXT NOT NULL,              -- anthropic / gemini
+    model TEXT,
+    kind TEXT,                           -- analysis / vision_extract
+    input_tokens INTEGER,
+    output_tokens INTEGER,
+    cost_usd REAL,                       -- 认不出价格就是 NULL，不猜成 0
+    duration_ms INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_usage_month ON api_usage(month);
 
 -- 记一笔哪些结构性迁移跑过了，迁移脚本靠它保证只跑一次。
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -220,7 +233,7 @@ def _adopt_legacy_db():
     只在用默认路径、且新文件还不存在、旧文件在的时候，把旧库**复制**成新库
     —— 复制不是移动：旧文件原地不动，万一迁移出问题还能回去。
     """
-    if DB_PATH != _DEFAULT_DB_PATH or DB_PATH.exists() or not _LEGACY_DB_PATH.exists():
+    if current_db_path() != _DEFAULT_DB_PATH or current_db_path().exists() or not _LEGACY_DB_PATH.exists():
         return
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(_LEGACY_DB_PATH, DB_PATH)
@@ -228,7 +241,7 @@ def _adopt_legacy_db():
 
 
 def init_db():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    current_db_path().parent.mkdir(parents=True, exist_ok=True)
     _adopt_legacy_db()
     with get_conn() as conn:
         conn.executescript(SCHEMA)
@@ -246,31 +259,28 @@ def backup_db(keep: int = 10, tag: str | None = None):
 
     tag 用于结构迁移前的一次性备份（文件名带标记，不参与每日轮转的清理）。
     """
-    if not DB_PATH.exists():
+    path = current_db_path()
+    if not path.exists():
         return None
-    backup_dir = DB_PATH.parent / "backups"
+    backup_dir = path.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     from datetime import date
     stamp = date.today().isoformat()
-    name = f"{DB_PATH.stem}-{tag}-{stamp}" if tag else f"{DB_PATH.stem}-{stamp}"
-    dest = backup_dir / f"{name}{DB_PATH.suffix}"
+    name = f"{path.stem}-{tag}-{stamp}" if tag else f"{path.stem}-{stamp}"
+    dest = backup_dir / f"{name}{path.suffix}"
     if dest.exists():
         return None  # 今天已经备份过（同 tag）
-    src, dst = sqlite3.connect(DB_PATH), sqlite3.connect(dest)
-    try:
-        src.backup(dst)
-    finally:
-        dst.close()
-        src.close()
+    from app.backups import snapshot
+    snapshot(path, dest)
     if tag is None:  # 只轮转每日备份，带 tag 的迁移前备份一律保留
-        for old in sorted(backup_dir.glob(f"{DB_PATH.stem}-20*{DB_PATH.suffix}"))[:-keep]:
+        for old in sorted(backup_dir.glob(f"{path.stem}-20*{path.suffix}"))[:-keep]:
             old.unlink()
     return dest
 
 
 @contextmanager
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(current_db_path(), timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:

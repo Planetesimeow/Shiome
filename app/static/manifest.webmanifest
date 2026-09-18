@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "潮目 Shiome · 创作者数据分析",
+  "short_name": "潮目",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#121110",
+  "theme_color": "#121110",
+  "icons": [{"src": "/static/img/favicon.png", "sizes": "128x128", "type": "image/png", "purpose": "any"}]
+}

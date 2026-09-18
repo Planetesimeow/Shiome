@@ -19,16 +19,17 @@ import time
 import base64
 
 from app.analysis.prompts import call_claude_json
+from app.model_calls import single_model_call
 
 # ---- 提取用的模型插槽（与文本分析的 ANALYSIS_MODEL 解耦） ----
-# 提取截图是"读字"任务，对视觉能力要求高于文本分析；Haiku 级视觉在密集中文 UI 上不够稳。
+# 分析和截图识别默认使用同一 Sonnet 模型，仍允许分别配置。
 # VISION_PROVIDER: anthropic（默认）或 gemini；VISION_MODEL 可覆盖各自默认模型。
 VISION_PROVIDER = os.environ.get("VISION_PROVIDER", "anthropic").lower()
 _DEFAULT_VISION_MODEL = {
-    "anthropic": "claude-sonnet-4-6",   # 刻意高于分析用的 Haiku：读数错了后面全错
+    "anthropic": "claude-sonnet-5",
     "gemini": "gemini-3.5-flash",
 }
-VISION_MODEL = os.environ.get("VISION_MODEL") or _DEFAULT_VISION_MODEL.get(VISION_PROVIDER, "claude-sonnet-4-6")
+VISION_MODEL = os.environ.get("VISION_MODEL") or _DEFAULT_VISION_MODEL.get(VISION_PROVIDER, "claude-sonnet-5")
 
 # Claude vision 最佳输入：最长边 ≤1568px。手机原图 2-5MB，压过之后 token 减半以上。
 MAX_EDGE = 1568
@@ -176,6 +177,7 @@ def _gemini_schema(node):
     return out
 
 
+@single_model_call
 def _extract_with_gemini(media_type: str, b64: str) -> dict:
     """Gemini 路线：google-genai SDK + response_schema 强制 JSON。
     错误统一包成与 Claude 路线相同的 {_api_error, retryable} 信封，前端无感知。"""
@@ -207,7 +209,7 @@ def _extract_with_gemini(media_type: str, b64: str) -> dict:
     except Exception as e:  # google-genai 的异常层级较散，统一按可重试与否粗分
         msg = str(e)
         retryable = any(x in msg for x in ("429", "500", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE", "timeout"))
-        return {"_api_error": f"Gemini API 错误：{msg[:300]}", "retryable": retryable}
+        return {"_api_error": "模型暂不可用，请重试或联系管理员检查配置。", "retryable": retryable}
 
     um = getattr(resp, "usage_metadata", None)
     meta = {
@@ -216,6 +218,12 @@ def _extract_with_gemini(media_type: str, b64: str) -> dict:
         "output_tokens": getattr(um, "candidates_token_count", None),
         "duration_ms": int((time.time() - t0) * 1000),
     }
+    from app.database import get_conn
+    from app.usage import record_usage
+    with get_conn() as conn:
+        record_usage(conn, "gemini", VISION_MODEL, "vision_extract",
+                     meta["input_tokens"], meta["output_tokens"], meta["duration_ms"])
+
     try:
         result = json.loads(resp.text)
     except (json.JSONDecodeError, TypeError):
@@ -237,4 +245,5 @@ def extract_screenshot(file_bytes: bytes, content_type: str | None = None) -> di
         schema=EXTRACTION_SCHEMA,
         images=[(media_type, b64)],
         model=VISION_MODEL,
+        kind="vision_extract",
     )

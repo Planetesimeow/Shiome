@@ -43,6 +43,7 @@ any engineering. Technical detail is there when you want it, never required to f
 
 | # | Date | Entry | In one line |
 |---|---|---|---|
+| 002 | 2026-09-11 | [A phone-ready pilot](002-2026-09-11-mobile-pilot.md) | Phone capture, persistent deployment and clearer boundaries between observed data and analysis. |
 | 001 | 2026-09-02 | [The creator data model](001-2026-09-02-creator-data-model.md) | Shiome stops being a Douyin tool and becomes a creator's tool — and we found four bugs that only appear when a second platform exists. |
 
 ---

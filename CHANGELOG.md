@@ -14,7 +14,164 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
-_Phase 1 · hosting — nothing merged yet._
+### [0.3.0] — 2026-09-18
+
+Phase 1 release: mobile web hosting and invited accounts. The entries below retain
+the implementation history of the release's development versions.
+
+**Added**
+- Phone-friendly screenshot upload, confirmation and content review, with HTTPS hosting,
+  persistent storage, backups and a configurable AI usage budget.
+- Invite-only accounts, administrator setup, per-user data isolation and a shared encrypted
+  Anthropic key funded by the administrator.
+
+**Changed**
+- Finalize the phase version as `0.3.0` and reconcile the release with `main`, retaining
+  the stacked-branch workflow and standard `v0.3.0` tag format.
+
+**Removed**
+- The previous CSV import UI, API and parser, alongside unused legacy code. A new import
+  standard remains future work.
+
+### [0.3.0-dev.12] — 2026-09-18
+
+**Added**
+- Protected first-owner setup, username/password login, single-use expiring invitations,
+  password changes and administrator user suspension. Existing personal data belongs to
+  the first administrator; each invited user gets a separate database and private export.
+- A shared encrypted Anthropic key managed by the administrator, personal usage records
+  and a service-wide budget ledger. Paid calls are serialized on the single-worker service.
+
+**Changed**
+- Analysis and screenshot recognition default to `claude-sonnet-5`, with thinking disabled
+  for forced structured tool output and current $2/$10 per million token pricing.
+- Backups cover the identity store and all user databases; ordinary downloads contain
+  only the current user's content. Password changes and suspension invalidate sessions.
+
+### [0.3.0-dev.11] — 2026-09-18
+
+**Changed**
+- Consolidate the completed integration PRs into a direct Phase 1 release PR, preserving
+  their merge history and carrying the CSV removal and legacy cleanup into release.
+
+### [0.3.0-dev.10] — 2026-09-18
+
+**Changed**
+- Integrate the reviewed legacy cleanup on top of CSV removal, completing the pending changes for the Phase 1 release branch.
+
+### [0.3.0-dev.9] — 2026-09-18
+
+**Changed**
+- Integrate the reviewed CSV removal on top of the Phase 1 deployment integration, preserving the original removal commits.
+
+### [0.3.0-dev.8] — 2026-09-18
+
+**Changed**
+- Integrate the remaining deployment guidance and stacked-branch workflow into the Phase 1 release sequence, preserving the original commits.
+
+### [0.3.0-dev.7] — 2026-09-17
+
+**Removed**
+- Unused analysis lookup wrapper, a superseded mobile CSS rule, and automatic creation
+  of unused conversation/message placeholder tables in new databases. Existing tables
+  and their data remain untouched; database adoption, migrations and backups stay supported.
+
+**Changed**
+- Replace pre-deployment status in current documentation with the verified VPS and iPhone
+  pilot status. Keep historical release notes and development logs as historical records.
+
+### [0.3.0-dev.6] — 2026-09-17
+
+**Removed**
+- CSV import from the dashboard, API, parser, fixtures and dedicated tests. Screenshots
+  remain the capture workflow; existing records, migration support and screenshot upserts
+  are preserved. Current documentation no longer advertises CSV import.
+
+### [0.3.0-dev.5] — 2026-09-17
+
+**Added**
+- First-server deployment guidance: temporary HTTPS without a domain registration,
+  SSH key access, host preparation, and checks for persistence and offsite recovery.
+  Explain the limited functionality available before configuring a model API key.
+
+### [0.3.0-dev.4] — 2026-09-11
+
+**Changed**
+- Require a new branch for every new change, however small, based on and targeting the
+  preceding work branch. Document parent-first merging and defer branch deletion until
+  child PRs are retargeted; add the agreement to `AGENTS.md` for future collaborators.
+
+### [0.3.0-dev.3] — 2026-09-11
+
+**Added**
+- Docker / Compose deployment with Caddy HTTPS, persistent SQLite storage, a readiness
+  endpoint, production credential validation and secure browser cookies.
+- Daily backups while the server stays running, authenticated database downloads, and
+  verified backup / restore commands that refuse to overwrite existing databases.
+- Mobile overview / posts / screenshot navigation, touch-friendly forms, and a home-screen
+  manifest. Drafts remain on screen when switching views or renewing an expired login.
+- A small-VPS Compose profile and a personal pilot configuration with a $0.75 monthly AI
+  allowance. The container smoke check also exercises image preparation under memory limits.
+
+**Fixed**
+- Screenshot confirmation preserves duration, uses the phone's local observation time,
+  escapes quoted titles, prevents repeated submissions and checks required identity fields.
+- Screenshot recognition runs outside the event loop; uploads have a 10 MB image limit.
+- Late detail and analysis responses no longer overwrite another selection. Profile and
+  snapshot saves show retryable failures; repeated clicks and in-flight analysis requests are guarded.
+- Demo seeding refuses every existing file instead of clearing its contents.
+
+**Changed**
+- Detail metrics now emphasize viewing and follower growth. Analyses follow account goals
+  and describe observed curves without treating their shape as evidence of moderation.
+- Consolidated current design, capture guidance and roadmap; removed the obsolete memo,
+  duplicate research prompt and unused creator-context aggregation code. Migrations remain intact.
+
+**Notes**
+- Hosting and an offsite backup destination still need to be provisioned for a live instance.
+- Current creator goal: stable content directions, viewing growth and follower growth;
+  configurable creator objectives are recorded for a future phase.
+
+### [0.3.0-dev.2] — 2026-09-02
+
+**Added**
+- API spend ledger (`api_usage`) and an optional monthly budget cap. `GET /api/usage`
+  reports the month's spend, remaining budget and a per-model breakdown; the dashboard
+  header shows the running total.
+- The cap is checked **before** a call is made, not after — discovering an overrun
+  afterwards means the money is already spent. Analyses and screenshot extraction are
+  both gated.
+
+**Notes**
+- Spend is tracked in its own table rather than summed from `analysis_results`, because
+  screenshot extraction never lands there — it produces a draft, not a conclusion — and it
+  is likely the larger cost, sending an image on every call. Summing only analyses would
+  have hidden the biggest line on the bill.
+- Calls whose model we have no price for (the optional Gemini extraction route) are
+  recorded with a null cost and reported as `unpriced_calls`, never silently as $0. An
+  invented cost is worse than a missing one because it looks trustworthy.
+- Prices are a dated snapshot in `app/pricing.py` and can be overridden per model with
+  `SHIOME_PRICE_*` when they change, without editing code.
+- No cap by default. Spend is always tracked and visible; a surprise refusal is worse than
+  an overrun for a personal tool. The deploy docs will recommend setting one.
+
+### [0.3.0-dev.1] — 2026-09-02
+
+**Added**
+- Authentication — the item flagged as "mandatory before any remote deployment" since the
+  first design notes. Password login with a signed session cookie for the browser, and an
+  `Authorization: Bearer` token for scripts and the mobile capture flow coming in Phase 2.
+  Login attempts are rate-limited per source address.
+- `python -m scripts.set_password` generates the hash and secret without the password ever
+  appearing in shell history or output.
+- `GET /api/version`, deliberately public, so a bug report can name what it was running.
+- Logout button in the dashboard header, shown only when a password is actually configured.
+
+**Security**
+- With no password and no API token configured, the app now serves **loopback only** and
+  refuses everything else with an explanation. Local development stays zero-config, and
+  "forgot to set up auth before exposing it" — the usual way small tools leak — stops
+  being reachable. Passwords are hashed with scrypt; sessions are HMAC-signed and expire.
 
 ### [0.2.1] — 2026-09-02
 
@@ -127,7 +284,138 @@ Initial public release of the runnable skeleton.
 
 ### [未发布]
 
-_Phase 1 · 上云 —— 还没有合入的改动。_
+### [0.3.0] — 2026-09-18
+
+Phase 1 正式版：手机网页版上线与邀请制账号。下方保留本阶段各开发版本的实现记录。
+
+**新增**
+- 适配手机的截图上传、确认和内容复盘，以及 HTTPS 部署、持久化存储、备份和可配置的 AI 用量预算。
+- 邀请制账号、首次管理员设置、按用户隔离的数据，以及由管理员承担费用的共享加密 Anthropic 密钥。
+
+**变更**
+- 阶段版本收口为 `0.3.0`，协调 release 与 `main` 的差异，保留串联分支规则及标准 `v0.3.0` tag 格式。
+
+**移除**
+- 旧 CSV 导入界面、API、解析器和不再使用的遗留代码。新的导入范式留待后续阶段实现。
+
+### [0.3.0-dev.12] — 2026-09-18
+
+**新增**
+- 受初始化口令保护的管理员设置、用户名密码登录、一次性限时邀请、修改密码和停用用户。
+  原有个人数据归首次创建的管理员所有，受邀用户分别使用独立数据库及个人备份。
+- 管理员配置一次共享 Anthropic 密钥，加密保存；按人记录用量，全站统一检查预算。
+  当前单 worker 服务同一时间处理一个付费请求。
+
+**调整**
+- 分析与截图识别默认使用 `claude-sonnet-5`，为结构化工具输出关闭默认思考，
+  按当前每百万 token 输入 2 美元、输出 10 美元记账。
+- 后台备份覆盖身份库和各用户数据库；网页下载仅包含当前用户的数据。
+  修改密码和停用账号会让既有会话失效。
+
+### [0.3.0-dev.11] — 2026-09-18
+
+**调整**
+- 将已完成的集成 PR 汇总为直接指向 Phase 1 release 的 PR，保留全部合并历史，
+  将 CSV 移除和旧版清理继续纳入 release。
+
+### [0.3.0-dev.10] — 2026-09-18
+
+**调整**
+- 在 CSV 移除之上接入已审查的旧版遗留清理，汇总尚未进入 Phase 1 release 的改动。
+
+### [0.3.0-dev.9] — 2026-09-18
+
+**调整**
+- 在 Phase 1 部署集成之上接入已审查的 CSV 完整移除，保留原始移除提交。
+
+### [0.3.0-dev.8] — 2026-09-18
+
+**调整**
+- 将尚未进入 Phase 1 release 的部署说明和串联分支规范纳入集成序列，保留原始提交历史。
+
+### [0.3.0-dev.7] — 2026-09-17
+
+**移除**
+- 未使用的分析查询包装函数、已被覆盖的手机样式规则，以及新库中未接入功能的对话/消息
+  占位表创建代码。已有表和数据保持原状，旧库接续、迁移和备份恢复继续保留。
+
+**调整**
+- 当前文档改为已验证的 VPS 与 iPhone 试运行状态，清除仍声称尚未上线的描述。
+  历史更新记录和开发日志继续作为当时的记录保留。
+
+### [0.3.0-dev.6] — 2026-09-17
+
+**移除**
+- 完整移除 CSV 的界面入口、API、解析器、样例和专属测试；采集统一使用截图。
+  保留已有记录、迁移兼容与截图更新逻辑，同步删除当前文档里的 CSV 使用说明。
+
+### [0.3.0-dev.5] — 2026-09-17
+
+**新增**
+- 首台服务器上线说明：免注册域名的临时 HTTPS、SSH 密钥登录、主机准备，以及数据持久化
+  和异地恢复验收；明确尚未配置模型 API key 时可使用的功能范围。
+
+### [0.3.0-dev.4] — 2026-09-11
+
+**调整**
+- 每个新改动无论大小，都从前一个工作分支新建分支，PR 指向前一个分支。明确先合父分支、
+  子 PR 改好目标后再删除父分支，并将约定写入 `AGENTS.md`，供后续协作者遵守。
+
+### [0.3.0-dev.3] — 2026-09-11
+
+**新增**
+- Docker / Compose 部署配置：Caddy HTTPS、SQLite 持久化、健康检查、生产环境凭据校验及安全会话。
+- 服务持续运行期间的每日备份、登录后下载完整数据库，以及拒绝覆盖现有数据库的备份/恢复命令。
+- 手机总览 / 作品 / 截图导航、触控表单及主屏幕入口；切换页面或重新登录时保留当前截图草稿。
+- 小内存 VPS 部署配置及 AI 月度额度为 0.75 美元的个人试运行模板；CI 同时在内存限制下验证图片预处理。
+
+**修复**
+- 截图确认保留作品时长，使用手机本地观察时间，正确处理带引号的标题，防重复点击及身份字段缺失。
+- 截图识别移出事件循环，单张图片限制为 10 MB。
+- 延迟的作品详情和分析响应不再覆盖新选择；画像/快照保存失败可重试，阻止重复点击及重复发起进行中的分析。
+- 演示播种命令拒绝已有文件，不再清空目标数据库。
+
+**调整**
+- 详情优先展示观看与涨粉指标；分析遵循账号目标，不再用曲线形状直接推断限流或审核。
+- 统一当前设计、采集指南与路线图；删除旧备忘、重复研究 Prompt 和未调用的上下文组装函数，保留迁移兼容逻辑。
+
+**说明**
+- 实例正式上线仍需配置托管位置及异地备份目标。
+- 当前创作目标为找到稳定内容方向、提升观看和涨粉；可选择创作目标已记入未来路线图。
+
+### [0.3.0-dev.2] — 2026-09-02
+
+**新增**
+- API 花销账本（`api_usage`）和可选的每月预算上限。`GET /api/usage` 返回本月花销、
+  剩余额度和按模型的分解；dashboard 头部显示累计金额。
+- 上限在**发起调用之前**检查，而不是之后 —— 事后才发现超支，钱已经花掉了。
+  分析和截图提取都会被挡。
+
+**说明**
+- 花销单独建表，而不是从 `analysis_results` 里加总：截图提取根本不落那张表
+  （它产出的是待确认草稿，不是分析结论），而它每次要传一张图，很可能才是大头。
+  只统计分析的话，账单上最大的一块是看不见的。
+- 我们没有价目的模型（可选的 Gemini 提取路线）成本记 NULL，并作为 `unpriced_calls`
+  如实报出来，绝不悄悄按 0 元算 —— 编出来的成本比缺失的成本更糟，因为它看起来可信。
+- 价目表是 `app/pricing.py` 里带日期的快照，过期时可以用 `SHIOME_PRICE_*`
+  按模型覆盖，不用改代码。
+- 默认不设上限。花销永远统计、永远可见；对一个自用工具来说，突然被拒绝比超支更让人困惑。
+  部署文档里会建议设一个。
+
+### [0.3.0-dev.1] — 2026-09-02
+
+**新增**
+- 鉴权 —— 从最早的设计备忘起就写着「远程部署前必须补上」的那一项。浏览器走口令登录 +
+  签名 cookie；脚本和 Phase 2 的手机采集走 `Authorization: Bearer` token。
+  登录失败按来源 IP 限速。
+- `python -m scripts.set_password` 生成哈希和密钥，明文口令不会出现在命令历史或输出里。
+- `GET /api/version`，刻意做成公开的 —— 一份 bug 报告要能说清楚跑的是哪一版。
+- dashboard 头部的退出按钮，只在服务端确实配了口令时才显示。
+
+**安全**
+- 没配口令也没配 API token 时，应用只接受**本机**请求，其余一律拒绝并说明原因。
+  本地开发照旧零配置，而「忘了配鉴权就丢到公网」这条最常见的事故路径直接走不通。
+  口令用 scrypt 哈希，会话用 HMAC 签名并带过期。
 
 ### [0.2.1] — 2026-09-02
 
@@ -228,7 +516,8 @@ _Phase 1 · 上云 —— 还没有合入的改动。_
 
 ---
 
-[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Planetesimeow/Shiome/compare/v0.2.0...v0.3.0
 [0.2.1]: https://github.com/Planetesimeow/Shiome/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Planetesimeow/Shiome/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Planetesimeow/Shiome/releases/tag/v0.1.0
