@@ -14,6 +14,25 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
+### [0.3.0] — 2026-09-18
+
+Phase 1 release: mobile web hosting and invited accounts. The entries below retain
+the implementation history of the release's development versions.
+
+**Added**
+- Phone-friendly screenshot upload, confirmation and content review, with HTTPS hosting,
+  persistent storage, backups and a configurable AI usage budget.
+- Invite-only accounts, administrator setup, per-user data isolation and a shared encrypted
+  Anthropic key funded by the administrator.
+
+**Changed**
+- Finalize the phase version as `0.3.0` and reconcile the release with `main`, retaining
+  the stacked-branch workflow and standard `v0.3.0` tag format.
+
+**Removed**
+- The previous CSV import UI, API and parser, alongside unused legacy code. A new import
+  standard remains future work.
+
 ### [0.3.0-dev.12] — 2026-09-18
 
 **Added**
@@ -154,6 +173,15 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
   "forgot to set up auth before exposing it" — the usual way small tools leak — stops
   being reachable. Passwords are hashed with scrypt; sessions are HMAC-signed and expire.
 
+### [0.2.1] — 2026-09-02
+
+**Changed**
+- Git tags normalised to the standard `v0.2.0` form. The repository's first tag was
+  written `v.0.1.0`, with a dot after the `v`, and the convention had been documented to
+  match it. Both existing tags were renamed in place — same commits, and `v0.2.0` keeps
+  its original annotation and date. Changelog compare links and `docs/workflow.md` now
+  describe the standard form.
+
 ### [0.2.0] — 2026-09-02
 
 **Breaking**
@@ -255,6 +283,20 @@ Initial public release of the runnable skeleton.
 ## 中文
 
 ### [未发布]
+
+### [0.3.0] — 2026-09-18
+
+Phase 1 正式版：手机网页版上线与邀请制账号。下方保留本阶段各开发版本的实现记录。
+
+**新增**
+- 适配手机的截图上传、确认和内容复盘，以及 HTTPS 部署、持久化存储、备份和可配置的 AI 用量预算。
+- 邀请制账号、首次管理员设置、按用户隔离的数据，以及由管理员承担费用的共享加密 Anthropic 密钥。
+
+**变更**
+- 阶段版本收口为 `0.3.0`，协调 release 与 `main` 的差异，保留串联分支规则及标准 `v0.3.0` tag 格式。
+
+**移除**
+- 旧 CSV 导入界面、API、解析器和不再使用的遗留代码。新的导入范式留待后续阶段实现。
 
 ### [0.3.0-dev.12] — 2026-09-18
 
@@ -375,6 +417,13 @@ Initial public release of the runnable skeleton.
   本地开发照旧零配置，而「忘了配鉴权就丢到公网」这条最常见的事故路径直接走不通。
   口令用 scrypt 哈希，会话用 HMAC 签名并带过期。
 
+### [0.2.1] — 2026-09-02
+
+**变更**
+- git tag 统一成标准写法 `v0.2.0`。仓库最早那个 tag 写成了 `v.0.1.0`（`v` 后面带一个点），
+  之前的约定是照着它写的。现在把已有的两个 tag 都改了名 —— 指向的提交不变，
+  `v0.2.0` 保留原来的注释和日期。CHANGELOG 的对比链接和 `docs/workflow.md` 一并改成标准写法。
+
 ### [0.2.0] — 2026-09-02
 
 **破坏性变更**
@@ -467,6 +516,8 @@ Initial public release of the runnable skeleton.
 
 ---
 
-[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v.0.2.0...HEAD
-[0.2.0]: https://github.com/Planetesimeow/Shiome/compare/v.0.1.0...v.0.2.0
-[0.1.0]: https://github.com/Planetesimeow/Shiome/releases/tag/v.0.1.0
+[Unreleased]: https://github.com/Planetesimeow/Shiome/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Planetesimeow/Shiome/compare/v0.2.0...v0.3.0
+[0.2.1]: https://github.com/Planetesimeow/Shiome/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Planetesimeow/Shiome/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/Planetesimeow/Shiome/releases/tag/v0.1.0

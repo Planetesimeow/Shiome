@@ -32,7 +32,8 @@
 预算配置为 0.75 美元（按已记录费用检查，并非供应商账单硬上限）。持续自动异地备份尚未配置。
 继续观察识别质量、速度与真实费用，再决定是否调整模型或额度。原 Phase 2 的基础手机入口已提前完成。
 当前继续完善网页版，iPhone 可添加到主屏幕；原生安装包与商店上架暂不安排。
-`0.3.0-dev.12` 新增多人邀请和隔离，分析与截图默认切换至 Sonnet 5；需要合并并部署后才在云端生效。
+`0.3.0-dev.12` 的多人邀请、用户隔离和 Sonnet 5 默认配置已合入本阶段 release 并部署到云端。
+本阶段以 `0.3.0` 收口，待发布 PR 合入 `main` 后，再从更新后的 `main` 建立下一阶段 release。
 
 ## Phase 2：可信采集与内容复盘
 
@@ -62,7 +63,7 @@ The current goal is sustainable content directions, viewing growth and follower 
 
 Phase 0's data model and migrations are complete. Phase 1 is live: VPS provisioning, HTTPS, server restart recovery and offsite backup restoration have been verified. The creator confirmed real iPhone upload and screenshot recognition on September 17, 2026. Confirmation-field completeness, quality, speed and cost remain under observation; automatic offsite backups remain unconfigured. The current plan is to continue the web app with an iPhone home-screen entry, without scheduling native packages or store distribution. Basic mobile capture moved forward from Phase 2.
 
-Version 0.3.0-dev.12 adds invite-only accounts, per-user data isolation, administrator-funded AI usage and Sonnet 5 defaults. These changes need merging and deployment before taking effect on the live service.
+Version 0.3.0-dev.12's invite-only accounts, per-user data isolation, administrator-funded AI usage and Sonnet 5 defaults have been merged into the phase release and deployed. Phase 1 is finalized as 0.3.0; the next release branch starts from updated `main` after the release PR merges.
 
 Phase 2 prioritizes grouped screenshots, identity and observation tracking, missing-value semantics, retention/source/audience data, comparable baselines and follow-up content experiments. Account statistics and notes still need deliberate integration into analyses. Video-to-profile extraction remains future work.
 
