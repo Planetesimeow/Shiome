@@ -1,5 +1,21 @@
 # Shiome working agreement
 
+## Version override — creator instruction, 2026-09-20
+
+- This planning PR uses `1.0.1` without a prerelease suffix, as explicitly requested.
+  The Phase 2 target is updated to `1.0.1`; this version does not mean its planned features are implemented.
+- 本规划 PR 按创作者要求使用 `1.0.1`，不带预发布后缀；Phase 2 目标同步为 `1.0.1`。
+  规划中的功能仍待实现，其他 PR 继续遵守下述分支和预发布约定。
+
+## Phase 2 — creator instruction, 2026-09-18
+
+- The creator opened `release/phase-2-dataprocessing` from `main`; it is the current
+  integration branch. Keep `release/phase-1-hosting` until the creator requests its deletion.
+- Phase 2 targets `1.0.1`, with this planning PR using `1.0.1`. Keep historical `0.x` releases intact.
+- Follow [the Phase 2 plan](docs/phase-2-data-plan.md). First define metric semantics and
+  provenance, then imports and screenshot observations, deterministic statistics and AI feedback.
+- Treat the plan as pending implementation. Do not advertise planned features as available.
+
 ## Branches — creator instruction, 2026-09-11
 
 - Before starting any new feature, independent fix, cleanup or documentation change,
@@ -26,6 +42,10 @@
   container CI for deployment checks; do not restart Docker Desktop without a new request.
 
 ## 创作者约定
+
+2026-09-18 更新：当前承接分支为 `release/phase-2-dataprocessing`，目标版本 `1.0.1`，
+本规划 PR 使用 `1.0.1`。 保留 `release/phase-1-hosting`，直到创作者明确要求删除。
+按 [Phase 2 方案](docs/phase-2-data-plan.md) 推进；规划中的能力不能写成已经实现。
 
 每个新功能、独立修复、清理或文档变更，无论大小，都先从前一个工作分支新建分支，
 PR 指向前一个分支。一个分支只承载一件完整的事，同一件事的审查修正可以继续提交。

@@ -33,21 +33,24 @@
 继续观察识别质量、速度与真实费用，再决定是否调整模型或额度。原 Phase 2 的基础手机入口已提前完成。
 当前继续完善网页版，iPhone 可添加到主屏幕；原生安装包与商店上架暂不安排。
 `0.3.0-dev.12` 的多人邀请、用户隔离和 Sonnet 5 默认配置已合入本阶段 release 并部署到云端。
-本阶段以 `0.3.0` 收口，待发布 PR 合入 `main` 后，再从更新后的 `main` 建立下一阶段 release。
+本阶段以 `0.3.0` 收口，发布 PR #19 已合入 `main`；按创作者要求保留 `release/phase-1-hosting`。
 
-## Phase 2：可信采集与内容复盘
+## Phase 2：可信数据处理与内容复盘 — 目标 `1.0.1`
 
-按生产截图暴露的问题推进：
+创作者已从 `main` 建立 `release/phase-2-dataprocessing`。本规划 PR 按创作者要求使用 `1.0.1`，
+每项改动单独开分支和 PR。完整口径、截图范式与验收要求见 [Phase 2 数据处理方案](phase-2-data-plan.md)。
 
-1. 同作品截图组：首图绑定身份，续图补数据，同一观察合并，重复上传幂等；冲突集中复核。
-2. 数据保真：区分未观察、不适用与真实 0；保存发布时间精度、截图时间、页面截止时间和统计周期。
-3. 补充观看、来源和观众信息：5 秒完播、平均播放占比、留存摘要、推荐/搜索来源、搜索词、吸粉/脱粉/不感兴趣。数据字段须带作用范围与出处。
-4. 更可比的基线：作品形态、时长、发布后年龄分组，展示有效样本量，防止新旧累计量直接比较。
-5. 少量内容实验：给系列与开头等加标签，记录本次改动和要验证的指标，后续同口径复查。
-6. 按各分析所需接入账号统计、笔记、来源与受众数据；保存选数依据。未使用的数据不假装已参与判断。
-7. 视频或图文素材生成内容画像草稿，仍需人工确认。
+依次推进：
 
-当前每张截图独立确认，曲线仅作为可见趋势描述。这里列的是待开发功能，采集建议不等于已经能完整识别和使用所有页面。
+1. 指标字典与观察记录：账号日数据、账号周期数据、单作品累计快照分别存储，保留出处、时间、精度和缺失原因。
+2. 标准导入：先支持现有两种官方 XLSX，再提供同一口径的版本化 CSV 模板；代码解析、预览确认、重复检测和批次撤销。
+3. 截图补录：同作品同观察分组，补齐完播、来源和涨粉数据；OCR 与规则生成草稿，冲突人工复核。
+4. 代码统计：确定性计算增量、比率、样本覆盖和可比基线；记录选数与公式，缺失分母不猜测。
+5. AI 反馈与内容实验：仅使用确认后的事实，解释趋势、生成内容建议并注明依据；实验按同口径复查。
+6. 外部数据验证：核验同类/同 tag API 的实际字段、覆盖、费用及多人服务许可，再决定是否接入。
+
+当前仍是单张截图识别和确认，旧 CSV 已移除；上述新导入、分组及统计方案尚未实现。
+曲线暂存可见趋势描述，账号统计和笔记仍需按分析需求接入。视频/图文素材生成内容画像草稿留待后续。
 
 ## 后续功能
 
@@ -55,7 +58,8 @@
 - **Phase 5：对话式助手。** 围绕自己的内容与观察提问，引用有来源的数据，按需调用已有分析。可在需求明确时提前；届时再实现所需存储，新库不提前创建空的聊天表。
 - **目标选择与布局。** 在不同成功目标间切换；咨询、成交、收入等商业指标在目标需要时加入。
 
-暂不扩展按用户收费、自动抓平台数据、评论/私信全量采集、重视频处理和商业运营看板。当前受邀用户统一由管理员承担 AI 费用，先让手机采集与复盘形成稳定习惯。
+暂不扩展按用户收费、平台全量抓取、评论/私信全量采集、重视频处理和商业运营看板。
+平台 API 先验证可用性，不作为本阶段内部数据处理的前置条件。当前受邀用户统一由管理员承担 AI 费用。
 
 ## English
 
@@ -63,8 +67,8 @@ The current goal is sustainable content directions, viewing growth and follower 
 
 Phase 0's data model and migrations are complete. Phase 1 is live: VPS provisioning, HTTPS, server restart recovery and offsite backup restoration have been verified. The creator confirmed real iPhone upload and screenshot recognition on September 17, 2026. Confirmation-field completeness, quality, speed and cost remain under observation; automatic offsite backups remain unconfigured. The current plan is to continue the web app with an iPhone home-screen entry, without scheduling native packages or store distribution. Basic mobile capture moved forward from Phase 2.
 
-Version 0.3.0-dev.12's invite-only accounts, per-user data isolation, administrator-funded AI usage and Sonnet 5 defaults have been merged into the phase release and deployed. Phase 1 is finalized as 0.3.0; the next release branch starts from updated `main` after the release PR merges.
+Version 0.3.0-dev.12's invite-only accounts, per-user data isolation, administrator-funded AI usage and Sonnet 5 defaults have been merged into the phase release and deployed. Phase 1's 0.3.0 release PR #19 has merged into `main`; its release branch is retained at the creator's request.
 
-Phase 2 prioritizes grouped screenshots, identity and observation tracking, missing-value semantics, retention/source/audience data, comparable baselines and follow-up content experiments. Account statistics and notes still need deliberate integration into analyses. Video-to-profile extraction remains future work.
+The creator opened `release/phase-2-dataprocessing` from `main`. Phase 2 targets `1.0.1`, with this planning PR explicitly versioned `1.0.1` at the creator’s request. Follow the [data-processing plan](phase-2-data-plan.md): metric semantics and provenance first, then standard XLSX/CSV imports, grouped screenshot observations, deterministic statistics, AI feedback and content experiments. External APIs require a separate feasibility check. These are planned features; the current app still handles individual screenshots and has no CSV import. Account statistics and notes need deliberate integration into analyses; video-to-profile extraction remains future work.
 
 Phases 3/4 cover Xiaohongshu, Bilibili and cross-platform comparison, ordered by actual demand. Phase 5 adds conversation grounded in the creator's data. Goal selection can be scheduled as usage clarifies its requirements. Multi-user billing, automated platform scraping and extensive commercial dashboards remain outside this pilot.

@@ -1,5 +1,20 @@
 # Branches, releases and version codes / 分支、发布与版本号
 
+> **2026-09-20 creator override:** this planning PR uses `1.0.1` without a prerelease
+> suffix. Phase 2 now targets `1.0.1`. This does not mark the planned features as shipped;
+> the prerelease convention below remains the default for other development PRs.
+>
+> **2026-09-20 创作者更新：** 本规划 PR 使用 `1.0.1`，不带预发布后缀；Phase 2 目标同步为
+> `1.0.1`。这不表示规划功能已经交付；其他开发 PR 仍默认遵循下述预发布规则。
+
+> **Creator update, 2026-09-18:** Phase 2 uses `release/phase-2-dataprocessing`, created
+> by the creator from `main`, and targets `1.0.1`. The current planning PR uses `1.0.1` (see the override above).
+> Retain `release/phase-1-hosting`; deleting it requires a new creator instruction.
+>
+> **2026-09-18 创作者更新：** Phase 2 使用创作者从 `main` 建立的
+> `release/phase-2-dataprocessing`，目标版本为 `1.0.1`，本规划 PR 按上述最新指示使用 `1.0.1`。
+> 保留 `release/phase-1-hosting`；再次收到创作者的删除指示后才清理。
+
 > **Updated by creator instruction, 2026-09-11:** every new change, however small, gets
 > a new branch based on the preceding work branch, and its PR targets that branch.
 > This replaces the original rule that every feature starts directly from the release branch.
@@ -32,8 +47,9 @@ main                        always releasable; every commit here is a shipped ve
 ```
 
 - **A release branch per phase.** Phases come from [`roadmap-v2.md`](roadmap-v2.md) —
-  `release/phase-1-hosting`, `release/phase-2-capture`, and so on. It is created from
-  `main` when the phase starts and deleted after it merges back.
+  `release/phase-1-hosting`, `release/phase-2-dataprocessing`, and so on. It is created
+  from `main` when the phase starts. A merged release may be retained as a historical
+  reference; confirm the creator's retention instructions before deleting it.
 - **Every new change gets a new branch before editing.** This includes small features,
   independent fixes, cleanup and documentation. The first branch starts from the release
   branch; each subsequent branch starts from the preceding work branch and targets it in
@@ -55,23 +71,25 @@ A version is stated on **every** PR, in the PR title and in `app/__init__.py`.
 
 | | Version | Example |
 |---|---|---|
-| Phase | one minor version | Phase 0 → `0.2.0`, Phase 1 → `0.3.0` |
-| Feature PR within a phase, including stacked PRs | pre-release counter on the phase's version | `0.3.0-dev.1`, `0.3.0-dev.2` |
-| Release branch into `main` | the phase version, suffix dropped, then tagged | `0.3.0` → tag `v0.3.0` |
+| Phase 2 | first release in the 1.x series | `1.0.1` |
+| Feature PR within a phase, including stacked PRs | pre-release counter on the target version | `1.0.1-dev.1`, `1.0.1-dev.2` |
+| Release branch into `main` | the target version, suffix dropped, then tagged | `1.0.1` → tag `v1.0.1` |
 
-Semantic versioning, with the pre-1.0 caveat that breaking changes bump the **minor**
-rather than the major — which is what a phase is, so the two line up naturally.
+Phase 0 (`0.2.0`) and Phase 1 (`0.3.0`) remain historical releases. Phase numbers no
+longer determine version numbers by arithmetic. Following `1.0.1`, compatible features
+use `1.x.0` and fixes use `1.x.y`; a breaking change requires an explicit major-version
+decision. The old pre-1.0 exception no longer applies to new work.
 
 Every PR, including a small documentation or cleanup PR, therefore does three things:
 
 1. Bump `__version__` in [`app/__init__.py`](../app/__init__.py).
 2. Add the matching heading to [`CHANGELOG.md`](../CHANGELOG.md), in both languages.
-3. Put the version in the PR title: `Add mobile capture page (0.3.0-dev.2)`.
+3. Put the version in the PR title: `Define metric semantics (1.0.1-dev.2)`.
 
 `tests/test_version.py` fails if the constant and the newest changelog heading disagree,
 so the two cannot drift apart quietly.
 
-Tags are `v` followed directly by the version — `v0.1.0`, `v0.2.0`, `v0.3.0`. Only `main`
+Tags are `v` followed directly by the version — `v1.0.1`, `v1.1.0`. Only `main`
 is tagged. (The repository's first tag was written `v.0.1.0`, with a dot; both existing
 tags were renamed to the standard form on 2026-09-02, pointing at the same commits.)
 
@@ -108,8 +126,8 @@ main                        永远可发布；这里的每个提交都是一个�
 ```
 
 - **一个阶段一条 release 分支。** 阶段来自 [`roadmap-v2.md`](roadmap-v2.md) ——
-  `release/phase-1-hosting`、`release/phase-2-capture`，以此类推。阶段开始时从 `main` 切出来，
-  合回去之后删掉。
+  `release/phase-1-hosting`、`release/phase-2-dataprocessing`，以此类推。阶段开始时从 `main` 切出来。
+  合并后的 release 可以保留作为历史参照；清理前先核对创作者的保留指示。
 - **每个新改动先开分支，再开始编辑。** 小功能、独立修复、清理和文档变更都一样。
   阶段内第一条 feature 从 release 切出并指向它；之后每条从前一个工作分支切出，
   PR 也指向前一个分支。前一个改动已合并时，从更新后的承接分支继续。
@@ -127,23 +145,24 @@ main                        永远可发布；这里的每个提交都是一个�
 
 | | 版本号 | 例子 |
 |---|---|---|
-| 一个阶段 | 一个小版本 | Phase 0 → `0.2.0`，Phase 1 → `0.3.0` |
-| 阶段内的 feature PR，包含指向前一个 feature 的 PR | 该阶段版本的预发布计数 | `0.3.0-dev.1`、`0.3.0-dev.2` |
-| release 分支合进 `main` | 去掉后缀的阶段版本，然后打 tag | `0.3.0` → tag `v0.3.0` |
+| Phase 2 | 1.x 系列的首个正式版本 | `1.0.1` |
+| 阶段内的 feature PR，包含指向前一个 feature 的 PR | 目标版本的预发布计数 | `1.0.1-dev.1`、`1.0.1-dev.2` |
+| release 分支合进 `main` | 去掉后缀的目标版本，然后打 tag | `1.0.1` → tag `v1.0.1` |
 
-遵循语义化版本，但有一个 1.0 之前的约定：破坏性变更升**小版本**而不是大版本 ——
-而一个阶段恰好就是这个量级，所以两者天然对齐。
+Phase 0（`0.2.0`）和 Phase 1（`0.3.0`）保留历史版本。阶段编号不再通过固定加法映射版本号。
+从 `1.0.1` 开始，兼容功能使用 `1.x.0`，修复使用 `1.x.y`；破坏性变更需要明确决定新的主版本。
+此前针对 0.x 的例外规则不再用于新工作。
 
 于是每个 PR，包括很小的文档或清理 PR，都要做三件事：
 
 1. 改 [`app/__init__.py`](../app/__init__.py) 里的 `__version__`。
 2. 在 [`CHANGELOG.md`](../CHANGELOG.md) 里加上对应的版本标题（中英文都要）。
-3. 把版本号写进 PR 标题：`Add mobile capture page (0.3.0-dev.2)`。
+3. 把版本号写进 PR 标题：`Define metric semantics (1.0.1-dev.2)`。
 
 `tests/test_version.py` 会在常量和最新的 changelog 标题不一致时报错，
 所以这两处不会悄悄跑偏。
 
-tag 是 `v` 直接跟版本号 —— `v0.1.0`、`v0.2.0`、`v0.3.0`。只给 `main` 打 tag。
+tag 是 `v` 直接跟版本号 —— `v1.0.1`、`v1.1.0`。只给 `main` 打 tag。
 （仓库最早的一个 tag 写成了带点的 `v.0.1.0`；2026-09-02 把已有的两个 tag 都改成了标准写法，
 指向的提交不变。）
 
