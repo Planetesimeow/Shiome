@@ -14,10 +14,11 @@ and this project aims to follow [Semantic Versioning](https://semver.org/).
 
 ### [Unreleased]
 
-### [1.0.0-dev.1] — 2026-09-18
+### [1.0.1] — 2026-09-20
 
 **Changed**
-- Start Phase 2 on `release/phase-2-dataprocessing`, targeting `1.0.0`; retain the Phase 1
+- Use `1.0.1` for this planning PR at the creator’s request and correct the sample directory to `reference/`.
+- Start Phase 2 on `release/phase-2-dataprocessing`, targeting `1.0.1`; retain the Phase 1
   release branch and historical versions, and update the bilingual versioning agreement.
 - Fix the development order in a dedicated data-processing plan: metric definitions and
   provenance, standard imports, screenshot observations, deterministic statistics and
@@ -295,10 +296,11 @@ Initial public release of the runnable skeleton.
 
 ### [未发布]
 
-### [1.0.0-dev.1] — 2026-09-18
+### [1.0.1] — 2026-09-20
 
 **变更**
-- 在 `release/phase-2-dataprocessing` 启动 Phase 2，目标版本为 `1.0.0`；保留 Phase 1
+- 按创作者要求将本规划 PR 版本设为 `1.0.1`，并将样本目录更正为 `reference/`。
+- 在 `release/phase-2-dataprocessing` 启动 Phase 2，目标版本为 `1.0.1`；保留 Phase 1
   release 分支和历史版本，更新中英文版本约定。
 - 用独立的数据处理方案固定开发顺序：指标口径与出处、标准导入、截图观察、代码统计、
   有证据的 AI 反馈。外部平台 API 作为单独的可行性验证。

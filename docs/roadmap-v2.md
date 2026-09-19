@@ -35,9 +35,9 @@
 `0.3.0-dev.12` 的多人邀请、用户隔离和 Sonnet 5 默认配置已合入本阶段 release 并部署到云端。
 本阶段以 `0.3.0` 收口，发布 PR #19 已合入 `main`；按创作者要求保留 `release/phase-1-hosting`。
 
-## Phase 2：可信数据处理与内容复盘 — 目标 `1.0.0`
+## Phase 2：可信数据处理与内容复盘 — 目标 `1.0.1`
 
-创作者已从 `main` 建立 `release/phase-2-dataprocessing`。开发版从 `1.0.0-dev.1` 起，
+创作者已从 `main` 建立 `release/phase-2-dataprocessing`。本规划 PR 按创作者要求使用 `1.0.1`，
 每项改动单独开分支和 PR。完整口径、截图范式与验收要求见 [Phase 2 数据处理方案](phase-2-data-plan.md)。
 
 依次推进：
@@ -69,6 +69,6 @@ Phase 0's data model and migrations are complete. Phase 1 is live: VPS provision
 
 Version 0.3.0-dev.12's invite-only accounts, per-user data isolation, administrator-funded AI usage and Sonnet 5 defaults have been merged into the phase release and deployed. Phase 1's 0.3.0 release PR #19 has merged into `main`; its release branch is retained at the creator's request.
 
-The creator opened `release/phase-2-dataprocessing` from `main`. Phase 2 targets `1.0.0`, starting at `1.0.0-dev.1`. Follow the [data-processing plan](phase-2-data-plan.md): metric semantics and provenance first, then standard XLSX/CSV imports, grouped screenshot observations, deterministic statistics, AI feedback and content experiments. External APIs require a separate feasibility check. These are planned features; the current app still handles individual screenshots and has no CSV import. Account statistics and notes need deliberate integration into analyses; video-to-profile extraction remains future work.
+The creator opened `release/phase-2-dataprocessing` from `main`. Phase 2 targets `1.0.1`, with this planning PR explicitly versioned `1.0.1` at the creator’s request. Follow the [data-processing plan](phase-2-data-plan.md): metric semantics and provenance first, then standard XLSX/CSV imports, grouped screenshot observations, deterministic statistics, AI feedback and content experiments. External APIs require a separate feasibility check. These are planned features; the current app still handles individual screenshots and has no CSV import. Account statistics and notes need deliberate integration into analyses; video-to-profile extraction remains future work.
 
 Phases 3/4 cover Xiaohongshu, Bilibili and cross-platform comparison, ordered by actual demand. Phase 5 adds conversation grounded in the creator's data. Goal selection can be scheduled as usage clarifies its requirements. Multi-user billing, automated platform scraping and extensive commercial dashboards remain outside this pilot.

@@ -1,6 +1,6 @@
 # Phase 2：可信数据处理与内容复盘
 
-确定于 2026-09-18。承接分支：`release/phase-2-dataprocessing`。目标版本：`1.0.0`。
+确定于 2026-09-18。承接分支：`release/phase-2-dataprocessing`。目标版本：`1.0.1`。
 
 本文固定开发方向及验收边界，所列新能力均待实现。当前版本仍使用单张截图识别与确认，旧 CSV
 导入已移除。本阶段先完成下面的第 1 步，再依次交付；每项独立改动单独开分支和 PR，遵守
@@ -57,7 +57,7 @@
 
 ## 2. 标准导入：先覆盖真实的两种导出
 
-`csvexample/` 已提供的是两份 XLSX，均为账号日数据。它们没有单作品身份，不能直接用于判断
+`reference/` 已提供的是两份 XLSX，均为账号日数据。它们没有单作品身份，不能直接用于判断
 某条内容的完播或涨粉。公开测试仅使用人工合成数据，不提交真实导出或截图。
 
 | 导出 | 原始列 |
@@ -157,7 +157,7 @@ Shiome 多人服务的使用范围需在接入前明确。
 
 | 顺序 | 独立交付 | 放行条件 |
 |---|---|---|
-| 0 | 本文、路线图和 1.x 版本规范 | `1.0.0-dev.1`，仅文档和版本元数据 |
+| 0 | 本文、路线图和 1.x 版本规范 | `1.0.1`（创作者指定），仅文档和版本元数据 |
 | 1 | 指标字典、观察/出处模型与迁移 | 明确口径，历史数据与用户隔离可验证 |
 | 2 | 标准 XLSX/CSV 导入 | 预览、确认、冲突、幂等、撤销均成立 |
 | 3 | 截图分组与复核 | 身份和观察准确关联，OCR 路线经样本验证 |
@@ -166,12 +166,12 @@ Shiome 多人服务的使用范围需在接入前明确。
 | 6 | 平台 API 可行性结论 | 给出是否接入及其依据，接入本身不作为发布前置条件 |
 
 每行可按迁移、API、界面拆成依赖明确的小 PR，不预先固定每个功能的开发版本号。
-`1.0.0` 发布前，自己的表格与必要截图应能形成「导入—确认—计算—解释—复查」闭环，所有
+`1.0.1` 发布前，自己的表格与必要截图应能形成「导入—确认—计算—解释—复查」闭环，所有
 展示的核心指标能追到原始证据。云端部署保持单独的发布步骤，规划 PR 不触发部署或数据迁移。
 
 ## English
 
-Phase 2 targets `1.0.0` on `release/phase-2-dataprocessing`; Phase 1 is retained.
+Phase 2 targets `1.0.1` on `release/phase-2-dataprocessing`; Phase 1 is retained.
 Define metric semantics, time scopes and provenance before adding standard XLSX/CSV imports,
 grouped screenshot observations, deterministic statistics and evidence-based AI feedback.
 Account daily data, period aggregates and post observations are separate. Unknown values and
